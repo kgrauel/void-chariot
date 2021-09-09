@@ -84,6 +84,50 @@ class UpscalePass {
     }
 }
 
+class DitherPass extends UpscalePass {
+    getShader() {
+        return new THREE.ShaderMaterial({
+            uniforms: {
+                tDiffuse: {
+                    value: this.target.texture
+                }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+                }
+            `,
+            fragmentShader: `
+                varying vec2 vUv;
+                uniform sampler2D tDiffuse;
+
+                const int indexMatrix4x4[16] = int[](
+                    0,  8,  2,  10,
+                    12, 4,  14, 6,
+                    3,  11, 1,  9,
+                    15, 7,  13, 5
+                );
+
+                void main() {
+                    vec3 base = texture2D(tDiffuse, vUv).rgb;
+                    
+                    float norm = length(base);
+                    float max = sqrt(3.0);
+                    float level = floor(norm / max * 5.0);
+                    float 
+                    
+
+                    gl_FragColor = vec4(base, 1.0);
+                }
+            `,
+            depthWrite: false
+        });
+    }
+}
+
 class View {
     containerElement: HTMLElement;
 
@@ -94,6 +138,7 @@ class View {
     directionalLightSecondary: THREE.DirectionalLight;
     
     renderer: THREE.WebGLRenderer;
+    ditherPass: DitherPass;
     upscalePass: UpscalePass;
 
 
@@ -135,6 +180,7 @@ class View {
         torus.rotation.set(0.5, 2.5, 0.9);
         this.scene.add(torus);
         
+        this.ditherPass = new DitherPass();
         this.upscalePass = new UpscalePass();
 
         this.renderer = new THREE.WebGLRenderer();
@@ -159,8 +205,11 @@ class View {
     }
 
     renderFrame() {
-        this.renderer.setRenderTarget(this.upscalePass.target);
+        this.renderer.setRenderTarget(this.ditherPass.target);
         this.renderer.render(this.scene, this.camera);
+
+        this.renderer.setRenderTarget(this.upscalePass.target);
+        this.renderer.render(this.ditherPass.scene, this.ditherPass.camera);
 
         // Render full screen quad with generated texture
         this.renderer.setRenderTarget(null);
