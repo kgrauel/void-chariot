@@ -1,8 +1,88 @@
 import * as THREE from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { GlitchPass } from 'three/examples/jsm/postprocessing/GlitchPass.js';
-import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+
+class UpscalePass {
+    target: THREE.WebGLRenderTarget;
+    scene: THREE.Scene;
+    camera: THREE.OrthographicCamera;
+    material: THREE.ShaderMaterial;
+    geometry: THREE.PlaneGeometry;
+    mesh: THREE.Mesh;
+    
+    calculateDimensions() {
+        return [
+            window.innerWidth / 4,
+            window.innerHeight / 4
+        ];
+    }
+
+    getShader() {
+        return new THREE.ShaderMaterial({
+            uniforms: {
+                tDiffuse: {
+                    value: this.target.texture
+                }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+                }
+            `,
+            fragmentShader: `
+                varying vec2 vUv;
+                uniform sampler2D tDiffuse;
+
+                void main() {
+                    vec3 base = texture2D(tDiffuse, vUv).rgb;
+                    gl_FragColor = vec4(base, 1.0);
+                }
+            `,
+            depthWrite: false
+        });
+    }
+
+    constructor() {
+        const dim = this.calculateDimensions();
+
+        this.target = new THREE.WebGLRenderTarget(
+            dim[0],
+            dim[1],
+            {
+                minFilter: THREE.LinearFilter,
+                magFilter: THREE.NearestFilter,
+                format: THREE.RGBFormat
+            }
+        );
+
+        this.camera = new THREE.OrthographicCamera(
+            -1, 1,
+            1, -1,
+            -10000,
+            10000
+        );
+
+        this.camera.position.z = 1;
+
+        this.material = this.getShader();
+
+        this.geometry = new THREE.PlaneGeometry(2, 2);
+        this.mesh = new THREE.Mesh(this.geometry, this.material);
+        this.mesh.position.z = -100;
+
+        this.scene = new THREE.Scene();
+        this.scene.add(this.mesh);
+    }
+
+    onResize() {
+        const dim = this.calculateDimensions();
+        this.target.setSize(
+            dim[0],
+            dim[1]
+        );
+    }
+}
 
 class View {
     containerElement: HTMLElement;
@@ -14,14 +94,8 @@ class View {
     directionalLightSecondary: THREE.DirectionalLight;
     
     renderer: THREE.WebGLRenderer;
-    renderTarget: THREE.WebGLRenderTarget;
-    upscaleScene: THREE.Scene;
-    upscaleCamera: THREE.OrthographicCamera;
-    upscaleMaterial: THREE.ShaderMaterial;
-    upscaleGeometry: THREE.PlaneGeometry;
-    upscaleMesh: THREE.Mesh;
+    upscalePass: UpscalePass;
 
-    ditherMaterial: THREE.ShaderMaterial;
 
     constructor() {
         const el = document.getElementById("container");
@@ -61,75 +135,12 @@ class View {
         torus.rotation.set(0.5, 2.5, 0.9);
         this.scene.add(torus);
         
-
-
-        this.renderTarget = new THREE.WebGLRenderTarget(
-            window.innerWidth / 4,
-            window.innerHeight / 4,
-            {
-                minFilter: THREE.LinearFilter,
-                magFilter: THREE.NearestFilter,
-                format: THREE.RGBFormat
-            }
-        );
-
-        this.upscaleCamera = new THREE.OrthographicCamera(
-            window.innerWidth / -2,
-            window.innerWidth / 2,
-            window.innerHeight / 2,
-            window.innerHeight / -2,
-            -10000,
-            10000
-        );
-        this.upscaleCamera.position.z = 1;
-
-        this.upscaleMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                tDiffuse: {
-                    value: this.renderTarget.texture
-                }
-            },
-            vertexShader: `
-                varying vec2 vUv;
-
-                void main() {
-                    vUv = uv;
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
-                }
-            `,
-            fragmentShader: `
-                varying vec2 vUv;
-                uniform sampler2D tDiffuse;
-
-                void main() {
-                    vec3 base = texture2D(tDiffuse, vUv).rgb;
-                    gl_FragColor = vec4(base, 1.0);
-                }
-            `,
-            depthWrite: false
-        });
-
-        this.upscaleGeometry = new THREE.PlaneGeometry(
-            window.innerWidth,
-            window.innerHeight
-        );
-
-        this.upscaleMesh = new THREE.Mesh(this.upscaleGeometry, this.upscaleMaterial);
-        this.upscaleMesh.position.z = -100;
-
-        this.upscaleScene = new THREE.Scene();
-        this.upscaleScene.add(this.upscaleMesh);
-
-
+        this.upscalePass = new UpscalePass();
 
         this.renderer = new THREE.WebGLRenderer();
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.outputEncoding = THREE.sRGBEncoding;
-        this.renderer.autoClear = true;
-
-        
-
 
         this.containerElement.appendChild(this.renderer.domElement);
 
@@ -143,36 +154,17 @@ class View {
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.setSize(window.innerWidth, window.innerHeight);
 
-        this.renderTarget.setSize(
-            window.innerWidth / 4,
-            window.innerHeight / 4
-        );
-
-        this.upscaleCamera.left = window.innerWidth / -2;
-        this.upscaleCamera.right = window.innerWidth / 2;
-        this.upscaleCamera.top = window.innerHeight / 2;
-        this.upscaleCamera.bottom = window.innerHeight / -2;
-        this.upscaleCamera.updateProjectionMatrix();
-
-        this.upscaleScene.clear();
-        this.upscaleGeometry.dispose();
-        this.upscaleGeometry = new THREE.PlaneGeometry(
-            window.innerWidth,
-            window.innerHeight
-        );
-        this.upscaleMesh = new THREE.Mesh(this.upscaleGeometry, this.upscaleMaterial);
-        this.upscaleMesh.position.z = -100;
-        this.upscaleScene.add(this.upscaleMesh);
+        this.upscalePass.onResize();
 
     }
 
     renderFrame() {
-        this.renderer.setRenderTarget(this.renderTarget);
+        this.renderer.setRenderTarget(this.upscalePass.target);
         this.renderer.render(this.scene, this.camera);
 
         // Render full screen quad with generated texture
         this.renderer.setRenderTarget(null);
-        this.renderer.render(this.upscaleScene, this.upscaleCamera);
+        this.renderer.render(this.upscalePass.scene, this.upscalePass.camera);
     }
 }
 
