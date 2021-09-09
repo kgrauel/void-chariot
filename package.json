@@ -1,0 +1,24 @@
+{
+  "name": "void-chariot",
+  "version": "1.0.0",
+  "description": "A deep procedural 3d webgl puzzle game using THREE.js.",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "start": "tsc --noEmit && parcel src/index.html",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kgrauel/void-chariot.git"
+  },
+  "author": "",
+  "license": "GPLv3",
+  "bugs": {
+    "url": "https://github.com/kgrauel/void-chariot/issues"
+  },
+  "homepage": "https://github.com/kgrauel/void-chariot#readme",
+  "devDependencies": {
+    "@types/parcel-env": "^0.0.1",
+    "typescript": "^4.4.2"
+  }
+}
