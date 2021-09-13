@@ -9,9 +9,22 @@ export default class RenderPassUpscale {
     mesh: THREE.Mesh;
     
     calculateDimensions() {
+        let bestFraction = 0;
+        let bestScore = 0.0;
+        for (let f = 1; f <= 10; f++) {
+            let pixels = (window.innerWidth / f) * (window.innerHeight / f);
+            let score = 40000 / pixels;
+            if (score > 1) {
+                score = 1 / score;
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                bestFraction = f;
+            }
+        }
         return [
-            window.innerWidth / 3,
-            window.innerHeight / 3
+            Math.round(window.innerWidth / bestFraction),
+            Math.round(window.innerHeight / bestFraction)
         ];
     }
 
