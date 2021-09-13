@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import PassShaderQuad from "./pass_shader_quad";
+import createDitherShader from "./shader_dither";
 import createSDFShader from "./shader_sdf";
 import createUpscaleShader from "./shader_upscale";
 
@@ -15,6 +16,7 @@ export default class RenderGraph {
     renderer: THREE.WebGLRenderer;
 
     sdfPass: PassShaderQuad;
+    ditherPass: PassShaderQuad;
     upscalePass: PassShaderQuad;
 
 
@@ -28,6 +30,7 @@ export default class RenderGraph {
         this.renderer.outputEncoding = THREE.sRGBEncoding;
 
         this.sdfPass = new PassShaderQuad(true, createSDFShader());
+        this.ditherPass = new PassShaderQuad(true, createDitherShader());
         this.upscalePass = new PassShaderQuad(false, createUpscaleShader());
     
         this.updateDimensions();
@@ -70,6 +73,7 @@ export default class RenderGraph {
 
     render() {
         this.sdfPass.render(this.renderer, null, this.lrSize);
-        this.upscalePass.render(this.renderer, this.sdfPass.getOutputTexture(), null);
+        this.ditherPass.render(this.renderer, this.sdfPass.getOutputTexture(), this.lrSize);
+        this.upscalePass.render(this.renderer, this.ditherPass.getOutputTexture(), null);
     }
 }

@@ -591,8 +591,8 @@ export default function createSDFShader() {
                 float time = 32.0 + iTime*1.5;
 
                 // camera	
-                vec3 ta = vec3( 0.5, -0.5, -0.6 );
-                vec3 ro = ta + vec3( 4.5*cos(0.1*time), 1.3, 4.5*sin(0.1*time) );
+                vec3 ta = vec3( 0.5, 0.0, -0.6 );
+                vec3 ro = ta + vec3( 4.5*cos(0.1*time), 1.7, 4.5*sin(0.1*time) );
                 // camera-to-world transformation
                 mat3 ca = setCamera( ro, ta, 0.0 );
 

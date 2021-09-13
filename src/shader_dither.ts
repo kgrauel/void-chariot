@@ -1,13 +1,10 @@
 import * as THREE from "three";
 
-export default function createDitherShader(previousPass: THREE.Texture) {
+export default function createDitherShader() {
     return new THREE.ShaderMaterial({
         uniforms: {
-            previousPass: {
-                value: previousPass
-            },
             steps: {
-                value: 8.0
+                value: 32.0
             },
             gamma: {
                 value: 2.0
