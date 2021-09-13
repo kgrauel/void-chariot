@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { APP } from "./app";
 import PassShaderQuad from "./pass_shader_quad";
 import createDitherShader from "./shader_dither";
 import createSDFShader from "./shader_sdf";
@@ -45,6 +46,7 @@ export default class RenderGraph {
     calculateBestLowResolutionDimensions() {
         let bestFraction = 0;
         let bestScore = 0.0;
+        
         for (let f = 1; f <= 10; f++) {
             let pixels = (this.hrSize[0] / f) * (this.hrSize[1] / f);
             let score = this.pixelCountTarget / pixels;
@@ -72,8 +74,10 @@ export default class RenderGraph {
     }
 
     render() {
+        let t = APP.timer.getTotalElapsed();
+        this.sdfPass.setUniform("camPos", [2.5 * Math.cos(t * 0.7), 0.5, 2.5 * Math.sin(t * 0.7)]);
         this.sdfPass.render(this.renderer, null, this.lrSize);
-        this.ditherPass.render(this.renderer, this.sdfPass.getOutputTexture(), this.lrSize);
-        this.upscalePass.render(this.renderer, this.ditherPass.getOutputTexture(), null);
+        //this.ditherPass.render(this.renderer, this.sdfPass.getOutputTexture(), this.lrSize);
+        this.upscalePass.render(this.renderer, this.sdfPass.getOutputTexture(), null);
     }
 }

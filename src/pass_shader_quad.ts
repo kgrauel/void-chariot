@@ -34,7 +34,9 @@ export default class PassShaderQuad extends PassAbstract {
         this.scene.add(this.mesh);
     }
 
-    
+    setUniform(variableName: string, value: any) {
+        this.material.uniforms[variableName] = { value: value };
+    }
 
     render(
         renderer: THREE.WebGLRenderer,
