@@ -113,7 +113,27 @@ export default function createSDFShader() {
             }
 
             vec3 getPigment(vec3 p) {
-                return vec3(0.9);
+                vec3 c = vec3(0.9);
+                float an = 2.5 * (0.5 + 0.5 * sin(iTime * 1.1 + 3.0));
+                float far = length(p.xz);
+                if (p.y < -0.295) {
+                    if (far < 2.0) {
+                        c = vec3(0.7);
+                    }
+                }
+                if (p.y < -0.305) {
+                    c = vec3(0.5, 0.35, 0.25) * 2.0 / (2.0 + floor(-p.y));
+                }
+                
+                float ct = sdCappedTorus(p, vec2(sin(an), cos(an)), 0.5, 0.2);
+                if (ct < 0.01) {
+                    c = vec3(0.3, 0.4 + p.y * 0.3, 0.5 + p.y * 0.3);
+                }
+                if (ct < -0.02) {
+                    c = vec3(0.04);
+                }
+                
+                return c;
             }
 
             vec3 sky(vec3 dir) {
@@ -182,10 +202,11 @@ export default function createSDFShader() {
 
                 // Lighting.
                 vec3 color = vec3(0.0, 0.0, 0.0);
+                vec3 pigment = getPigment(p);
                 if (distance < 0.002 && distance > -0.1) {
                     vec3 normal = approximateNormal(p);
                     //float diffuse = clamp(dot(normal, directionTowardSun), 0.0, 1.0);
-                    //vec3 pigment = getPigment(p);
+                    vec3 pigment = getPigment(p);
                     //color = diffuse * sunColor * pigment;
                     vec3 f = normal;
                     vec3 s = normalize(cross(f, vec3(0.48, 0.6, 0.64)));
@@ -193,7 +214,7 @@ export default function createSDFShader() {
                     mat3 m = mat3(u, s, f);
                     for (int i = 0; i < 12; i++) {
                         vec3 aoRay = m * aoDirections[i];
-                        color += ao(p + normal * 0.005, aoRay) / 12.0 * (0.5 + 0.5 * dot(aoRay, directionTowardSun));
+                        color += ao(p + normal * 0.005, aoRay) / 12.0 * pigment * (0.5 + 0.5 * dot(aoRay, directionTowardSun));
                     }
                 } else {
                     color = sky(ray);
