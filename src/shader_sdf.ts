@@ -8,14 +8,14 @@ export default function createSDFShader() {
             iFrame: { value: 0 },
             camPos: { value: [1, 0.4, 2] },
             lookAt: { value: [0, 0, 0] },
-            focalLength: { value: 2.0 },
+            focalLength: { value: 1.5 },
             farPlaneDistance: { value: 30.0 },
             maxIterations: { value: 250.0 },
             directionTowardSun: { value: [1, 1, 1] },
             sunColor: { value: [0.7, 0.7, 0.7] },
-            aoIterations: { value: 10 },
+            aoIterations: { value: 13 },
             aoDistance: { value: 0.01 },
-            aoPower: { value: 1.25 },
+            aoPower: { value: 1.2 },
             
         },
 
@@ -97,7 +97,7 @@ export default function createSDFShader() {
                 float k = (sc.y*p.x>sc.x*p.y) ? dot(p.xy,sc) : length(p.xy);
                 return sqrt( dot(p,p) + ra*ra - 2.0*ra*k ) - rb;
             }
-
+ 
             float sdf(vec3 p)
             {
                 float an = 2.5 * (0.5 + 0.5 * sin(iTime * 1.1 + 3.0));
@@ -108,7 +108,7 @@ export default function createSDFShader() {
                 //vec3 pIn = warpTwist(p, 1.0 + 1.0 * cos(iTime));
                 v = min(v, sdCappedTorus(p, vec2(sin(an), cos(an)), 0.5, 0.2));
                 v = min(v, sdBoxFrame(p - vec3(0.0, 0.45, 0.0), vec3(0.2, 0.3, 0.3), 0.03));
-                
+                v = opIntersection(v, abs(p.x) * sin(iTime) + abs(p.z) * cos(iTime) - 0.3);
                 return v;
             }
 
@@ -182,7 +182,7 @@ export default function createSDFShader() {
 
                 // Lighting.
                 vec3 color = vec3(0.0, 0.0, 0.0);
-                if (distance < 0.002) {
+                if (distance < 0.002 && distance > -0.1) {
                     vec3 normal = approximateNormal(p);
                     //float diffuse = clamp(dot(normal, directionTowardSun), 0.0, 1.0);
                     //vec3 pigment = getPigment(p);

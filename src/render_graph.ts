@@ -75,7 +75,9 @@ export default class RenderGraph {
 
     render() {
         let t = APP.timer.getTotalElapsed();
-        this.sdfPass.setUniform("camPos", [2.5 * Math.cos(t * 0.7), 0.5, 2.5 * Math.sin(t * 0.7)]);
+        this.sdfPass.setUniform("camPos", APP.level.cameraPosition);
+        this.sdfPass.setUniform("lookAt", APP.level.cameraPosition.clone().add(APP.level.getCameraForward()));
+        
         this.sdfPass.render(this.renderer, null, this.lrSize);
         //this.ditherPass.render(this.renderer, this.sdfPass.getOutputTexture(), this.lrSize);
         this.upscalePass.render(this.renderer, this.sdfPass.getOutputTexture(), null);

@@ -1,17 +1,34 @@
+import Level from './level';
 import Timer from './timer';
 import View from './view';
 
 class App {
     view: View;
     timer: Timer;
+    level: Level;
+    
     debugMessage: string;
+
+    pressedKeys: Set<string>;
+    pressedMouseButtons: Set<number>;
+    mousePosition: number[];
+    dragLast: number[] | null;
+    dragDeltaThisFrame: number[] | null;
 
     constructor() {
         this.debugMessage = "";
+        this.pressedKeys = new Set();
+        this.pressedMouseButtons = new Set();
+        this.mousePosition = [0, 0];
+        this.dragLast = null;
+        this.dragDeltaThisFrame = null;
 
         try {
             this.timer = new Timer();
+            this.level = new Level();
             this.view = new View();
+
+            this.registerEventHandlers();
         } catch (e: any) {
             this.debugMessage = e.message;
             throw "Could not initialize application.";
@@ -22,16 +39,50 @@ class App {
         this.onRequestAnimationFrame();
     }
     
+    registerEventHandlers() {
+        window.addEventListener("keydown", (event) => {
+            this.pressedKeys.add(event.key);
+        });
+
+        window.addEventListener("keyup", (event) => {
+            this.pressedKeys.delete(event.key);
+        });
+
+        window.addEventListener("mousedown", (event) => {
+            this.pressedMouseButtons.add(event.button);
+            this.mousePosition = [event.x, event.y];
+            this.dragLast = [event.x, event.y];
+        });
+
+        window.addEventListener("mousemove", (event) => {
+            this.mousePosition = [event.x, event.y];
+        })
+
+        window.addEventListener("mouseup", (event) => {
+            this.pressedMouseButtons.delete(event.button);
+            this.mousePosition = [event.x, event.y];
+            this.dragLast = null;
+        });
+    }
+
     onRequestAnimationFrame() {
         this.timer.newFrame();
 
-        const dim = this.view.getDimensions();
-        document.getElementById("fps")!.innerText = String(Math.round(this.timer.getFPS()));
-        document.getElementById("fct")!.innerText = String(this.timer.frameCount);
-        document.getElementById("res")!.innerText = `${dim[0]}×${dim[1]}`;
-        document.getElementById("msg")!.innerText = `${this.debugMessage}`;
         
         try {
+            this.dragDeltaThisFrame = (this.pressedMouseButtons.size === 0 || this.dragLast === null ? null : [
+                this.mousePosition[0] - this.dragLast[0],
+                this.mousePosition[1] - this.dragLast[1]
+            ]);
+            this.dragLast = this.mousePosition;
+
+            const dim = this.view.getDimensions();
+            document.getElementById("fps")!.innerText = String(Math.round(this.timer.getFPS()));
+            document.getElementById("fct")!.innerText = String(this.timer.frameCount);
+            document.getElementById("res")!.innerText = `${dim[0]}×${dim[1]} ${this.dragDeltaThisFrame} ${Array.from(this.pressedMouseButtons)}`;
+            document.getElementById("msg")!.innerText = `${this.debugMessage}`;
+
+            this.level.doPhysics(this.timer.getDelta());
             this.view.renderFrame();
         } catch (e: any) {
             this.debugMessage = e.message;
