@@ -1,0 +1,6 @@
+void main() {
+    vec2 v = vec2((3), vv.yzy);
+    x--;
+    x++;
+    f();
+}
