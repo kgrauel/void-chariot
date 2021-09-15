@@ -1,0 +1,88 @@
+// TOP
+
+top: declaration+
+
+
+// TYPES
+
+?type: primitive_type | array_type
+!primitive_type: "void"|"float"|"int"|"vec2"|"vec3"
+               | "vec4"|"mat2"|"mat3"|"mat4"|"sampler2D" 
+array_type: primitive_type "[" expression? "]"
+
+
+// DECLARATIONS
+
+declaration: var_declaration ";" | function_declaration
+function_declaration: type identifier "(" parameters ")" block
+parameters: | (parameter ("," parameter)*)
+?parameter: qualifiers? type identifier
+var_declaration: qualifiers? type identifier array_mod? initializer?
+qualifiers: qualifier+
+!qualifier: "in" | "out" | "varying" | "const" | "uniform"
+array_mod: "[" expression? "]"
+initializer: "=" expression
+
+
+// STATEMENTS
+
+?statement: block | expression_statement | if_statement
+          | var_decl_stmt | for_statement | while_statement
+          | continue_statement | break_statement | return_statement
+          | discard_statement
+block: "{" statement+ "}"
+expression_statement: expression? ";"
+?var_decl_stmt: var_declaration ";"
+if_statement: "if" "(" expression ")" statement ("else" statement)?
+for_statement: "for" "(" fs_interior ";" fs_interior ";" fs_interior ")" statement
+?fs_interior: | expression | var_declaration
+while_statement: "while" "(" expression ")" statement
+continue_statement: "continue" ";"
+break_statement: "break" ";"
+return_statement: "return" expression? ";"
+discard_statement: "discard"
+
+
+// EXPRESSIONS
+
+?expression: assignment
+?assignment: conditional (_ass_op conditional)*
+?conditional: or_expression ("?" expression ":" assignment)?
+?or_expression: and_expression ("||" and_expression)*
+?and_expression: equality ("&&" equality)*
+?equality: relational (_eq_op relational)*
+?relational: additive (_rel_op additive)*
+?additive: multiplicative (_add_op multiplicative)*
+?multiplicative: unary (_mul_op unary)*
+?unary: _u_op unary | postfix
+?postfix: primary | fcall | array_literal | indexed 
+        | field_selection | increment | decrement
+increment: postfix "++"
+decrement: postfix "--"
+indexed: postfix "[" expression "]"
+fcall: (type | identifier) "(" arguments? ")"
+array_literal: type "[" expression "]" "(" arguments? ")"
+arguments: expression ("," expression)*
+field_selection: postfix "." identifier
+?primary: NUMBER | group | identifier
+group: "(" expression ")"
+identifier: /[a-zA-Z_][a-zA-Z_0-9]*/
+
+
+// OPERATORS
+
+!_ass_op: "="|"*="|"/="|"%="|"+="|"-="
+!_eq_op: "=="|"!="
+!_rel_op: "<"|">"|"<="|">="
+!_add_op: "+"|"-"
+!_mul_op: "*"|"/"|"%"
+!_u_op: "-"|"!"
+
+
+// IMPORTS
+
+%import common.NUMBER
+%import common.WS
+%ignore WS
+%ignore /\/\/[^\n]*/
+
