@@ -48,21 +48,21 @@ while_statement: "while" "(" expression ")" statement
 continue_statement: "continue" ";"
 break_statement: "break" ";"
 return_statement: "return" expression? ";"
-discard_statement: "discard"
+discard_statement: "discard" ";"
 
 
 // EXPRESSIONS
 
 ?expression: assignment
-?assignment: conditional (_ass_op conditional)*
+?assignment: conditional (ass_op conditional)*
 ?conditional: or_expression ("?" expression ":" assignment)?
 ?or_expression: and_expression ("||" and_expression)*
 ?and_expression: equality ("&&" equality)*
-?equality: relational (_eq_op relational)*
-?relational: additive (_rel_op additive)*
-?additive: multiplicative (_add_op multiplicative)*
-?multiplicative: unary (_mul_op unary)*
-?unary: _u_op unary | postfix
+?equality: relational (eq_op relational)*
+?relational: additive (rel_op additive)*
+?additive: multiplicative (add_op multiplicative)*
+?multiplicative: unary (mul_op unary)*
+?unary: u_op unary | postfix
 ?postfix: primary | fcall | array_literal | indexed 
         | field_selection | increment | decrement
 increment: postfix "++"
@@ -79,12 +79,25 @@ identifier: /[a-zA-Z_][a-zA-Z_0-9]*/
 
 // OPERATORS
 
-!_ass_op: "="|"*="|"/="|"%="|"+="|"-="
-!_eq_op: "=="|"!="
-!_rel_op: "<"|">"|"<="|">="
-!_add_op: "+"|"-"
-!_mul_op: "*"|"/"|"%"
-!_u_op: "-"|"!"
+ass_op: "=" -> eq
+      | "*=" -> times_eq
+      | "/=" -> divide_eq
+      | "%=" -> modulo_eq
+      | "+=" -> plus_eq
+      | "-=" -> subtract_eq
+eq_op: "==" -> is_equal
+     | "!=" -> is_not_equal
+rel_op: "<" -> below
+      | ">" -> above
+      | "<=" -> at_most
+      | ">=" -> at_least
+add_op: "+" -> add
+      | "-" -> subtract
+mul_op: "*" -> times
+      | "/" -> divided
+      | "%" -> percent
+u_op: "-" -> negative
+    | "!" -> logical_not
 
 
 // IMPORTS

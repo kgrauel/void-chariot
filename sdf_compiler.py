@@ -31,11 +31,15 @@ class UnaryOperation(Node):
         self.value = value
 
 class BinaryOperation(Node):
-    def __init__(self, left, right):
+    def __init__(self, left, right, center=None):
         self.left = left
         self.right = right
+        self.center = center
 
-
+    def emit(self, language):
+        if self.center is None:
+            raise "BinaryOperation with no center must override emit()"
+        return f"({self.left.emit(language)} {self.center.emit(language)} {self.right.emit(language)})"
 
 
 class PrimitiveType(UnaryOperation):
@@ -43,12 +47,41 @@ class PrimitiveType(UnaryOperation):
         return str(self.value)
 
 
+class Conditional(Node):
+    def __init__(self, condition, if_true, if_false):
+        self.condition = condition
+        self.if_true = if_true
+        self.if_false = if_false
+    
+    def emit(self, language):
+        return f"({self.condition.emit(language)} ? {self.if_true.emit(language)} : {self.if_false.emit(language)})"
 
-class OperationNegative(UnaryOperation):
+class ManyOperations(Node):
+    def __init__(self, sequence, operator=None):
+        '''If operator not given, sequence is of form [value, op, value, op, value].
+           Otherwise, sequence is a list of operands.'''
+        self.sequence = sequence
+        self.operator = operator
+
+    def emit(self, language):
+        render_fn = lambda x: x if isinstance(x, str) else x.emit(language)
+        intersperse = " " if self.operator is None else f" {self.operator} "
+        return f"({intersperse.join(map(render_fn, self.sequence))})"
+
+class PrefixOperation(UnaryOperation):
+    def __init__(self, value, operation):
+        self.value = value
+        self.operation = operation
+
+    def emit(self, language):
+        return f"{self.operation}{self.value.emit(language)}"
+
+
+class Negation(UnaryOperation):
     def emit(self, language):
         return f"-{self.value.emit(language)}"
 
-class OperationNot(UnaryOperation):
+class LogicalNot(UnaryOperation):
     def emit(self, language):
         return f"!{self.value.emit(language)}"
 
@@ -104,14 +137,48 @@ class Intermediate(Transformer):
     def sampler2D(self, c): return PrimitiveType("sampler2D")
 
 
+
+
+
+
+
+    def assignment(self, c): return ManyOperations(c)
+    def conditional(self, c): return Conditional(c[0], c[1], c[2])
+    def or_expression(self, c): return ManyOperations(c, operator="||")
+    def and_expression(self, c): return ManyOperations(c, operator="&&")
+    def equality(self, c): return ManyOperations(c)
+    def relational(self, c): return ManyOperations(c)
+    def additive(self, c): return ManyOperations(c)
+    def multiplicative(self, c): return ManyOperations(c)
+    def unary(self, c): return PrefixOperation(c[1], c[0])
+
     def increment(self, c): return Increment(c[0])
     def decrement(self, c): return Decrement(c[0])
-    def indexed(self, c): return Indexed(c[0])
+    def indexed(self, c): return Indexed(c[0], c[1])
     def fcall(self, c): return FunctionCall(c[0], [] if len(c) < 2 else c[1])
     def arguments(self, c): return c
     def field_selection(self, c): return FieldSelection(c[0], c[1])
     def group(self, c): return Group(c[0])
     def identifier(self, c): return Identifier(c[0].value)
+    def eq(self, c): return "="
+    def times_eq(self, c): return "*="
+    def divide_eq(self, c): return "/="
+    def modulo_eq(self, c): return "%="
+    def plus_eq(self, c): return "+="
+    def subtract_eq(self, c): return "-="
+    def is_equal(self, c): return "=="
+    def is_not_equal(self, c): return "!="
+    def below(self, c): return "<"
+    def above(self, c): return ">"
+    def at_most(self, c): return "<="
+    def at_least(self, c): return ">="
+    def add(self, c): return "+"
+    def subtract(self, c): return "-"
+    def times(self, c): return "*"
+    def divided(self, c): return "/"
+    def percent(self, c): return "%"
+    def negative(self, c): return "-"
+    def logical_not(self, c): return "!"
     def NUMBER(self, c): return LiteralFloat(c)   # c is not a list here..???
 
 
