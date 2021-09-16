@@ -16,18 +16,19 @@ primitive_type: "void" -> void
               | "mat3" -> mat3
               | "mat4" -> mat4
               | "sampler2D" -> sampler2d
-array_type: primitive_type "[" expression? "]"
+array_type: primitive_type array_mod
 
 
 // DECLARATIONS
 
-declaration: var_declaration ";" | function_declaration
+?declaration: var_decl_stmt | function_declaration
 function_declaration: type identifier "(" parameters ")" block
 parameters: | (parameter ("," parameter)*)
-?parameter: qualifiers? type identifier
+parameter: type identifier
 var_declaration: qualifiers? type identifier array_mod? initializer?
 qualifiers: qualifier+
-!qualifier: "in" | "out" | "varying" | "const" | "uniform"
+qualifier: "const" -> constant
+         | "uniform" -> uniform
 array_mod: "[" expression? "]"
 initializer: "=" expression
 
@@ -40,7 +41,7 @@ initializer: "=" expression
           | discard_statement
 block: "{" statement+ "}"
 expression_statement: expression? ";"
-?var_decl_stmt: var_declaration ";"
+var_decl_stmt: var_declaration ";"
 if_statement: "if" "(" expression ")" statement ("else" statement)?
 for_statement: "for" "(" fs_interior ";" fs_interior ";" fs_interior ")" statement
 ?fs_interior: | expression | var_declaration
