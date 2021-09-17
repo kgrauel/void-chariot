@@ -1,7 +1,9 @@
 // TOP
 
-top: declaration+
-
+top: container+
+?container: level_container | renderer_container
+level_container: "level" "{" declaration+ "}"
+renderer_container: "renderer" "{" declaration+ "}"
 
 // TYPES
 

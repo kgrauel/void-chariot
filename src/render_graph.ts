@@ -30,7 +30,7 @@ export default class RenderGraph {
         this.renderer = new THREE.WebGLRenderer();
         this.renderer.outputEncoding = THREE.sRGBEncoding;
 
-        this.sdfPass = new PassShaderQuad(true, createSDFShader());
+        this.sdfPass = new PassShaderQuad(true, createSDFShader("01", "ao"));
         this.ditherPass = new PassShaderQuad(true, createDitherShader());
         this.upscalePass = new PassShaderQuad(false, createUpscaleShader());
     

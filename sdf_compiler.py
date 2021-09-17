@@ -2,20 +2,8 @@ import functools
 from dataclasses import dataclass
 from lark import Lark, Transformer
 from os import listdir
-from os.path import isfile, join
+from os.path import isfile, join, basename
 import pprint as pp
-
-def read_file(filename):
-    with open(filename, "r") as f:
-        content = f.read()
-    return content
-
-def make_parser():
-    grammar = read_file("level_grammar.lark")
-    return Lark(grammar, start="top", parser="lalr")
-
-def list_files(directory):
-    return [join(directory, f) for f in listdir(directory) if isfile(join(directory, f))]
 
 def margin(level):
     return "  " * level
@@ -45,10 +33,36 @@ class BinaryOperation(Node):
 
 class Top(Node):
     def __init__(self, children):
+        self.level = None
+        self.renderer = None
+        for c in children:
+            if isinstance(c, LevelContainer):
+                self.level = c
+            if isinstance(c, RendererContainer):
+                self.renderer = c
+
+class ShaderContainer(Node):
+    def __init__(self, children):
         self.children = children
     
     def emit(self, language, indent=0):
-        return "\n".join(map(lambda x: x.emit(language), self.children))
+        top = []
+        body = []
+
+        for c in self.children:
+            #print(type(c))
+            if isinstance(c, ExpressionStatement):
+                top.append(c.emit(language))
+            else:
+                body.append(c.emit(language))
+        
+        return ['\n'.join(top), '\n'.join(body)]
+
+class LevelContainer(ShaderContainer):
+    pass
+
+class RendererContainer(ShaderContainer):
+    pass
 
 class PrimitiveType(UnaryOperation):
     def emit(self, language, indent=0):
@@ -123,7 +137,7 @@ class ArrayModifier(UnaryOperation):
         if self.value is None:
             return "[]"
         else:
-            return f"[{self.value.emit(language)}]"
+            return f"[int({self.value.emit(language)})]"
         
 class Initializer(UnaryOperation):
     def emit(self, language, indent=0):
@@ -246,7 +260,7 @@ class Decrement(UnaryOperation):
 
 class Indexed(BinaryOperation):
     def emit(self, language, indent=0):
-        return f"{self.left.emit(language)}[{self.right.emit(language)}]"
+        return f"{self.left.emit(language)}[int({self.right.emit(language)})]"
 
 class FunctionCall(BinaryOperation):
     def emit(self, language, indent=0):
@@ -277,6 +291,8 @@ class LiteralFloat(UnaryOperation):
 class Intermediate(Transformer):
 
     def top(self, c): return Top(c)
+    def level_container(self, c): return LevelContainer(c)
+    def renderer_container(self, c): return RendererContainer(c)
 
     def void(self, c): return PrimitiveType("void")
     def float(self, c): return PrimitiveType("float")
@@ -353,22 +369,71 @@ class Intermediate(Transformer):
 
 
 
+def read_file(filename):
+    with open(filename, "r") as f:
+        content = f.read()
+    return content
+
+def make_parser():
+    grammar = read_file("level_grammar.lark")
+    return Lark(grammar, start="top", parser="lalr", transformer=Intermediate())
+
+def list_files(directory):
+    return [
+        join(directory, f) 
+        for f in listdir(directory) if isfile(join(directory, f))
+    ]
 
 
-
-
-
-
-
-
-
-
+def identify_source_files():
+    files = []
+    files.extend(list_files("./src/levels"))
+    files.extend(list_files("./src/gpu"))
+    return files
 
 
 
 parser = make_parser()
-for level in list_files("./levels"):
-    text = read_file(level)
-    tree = parser.parse(text)
-    print(tree.pretty())
-    pp.pp(Intermediate().transform(tree))
+
+with open("./src/built/index.ts", "w") as index:
+    index.write("let levels: Map<string, string[]> = new Map();\n")
+    index.write("let renderers: Map<string, string[]> = new Map();\n\n")
+
+    for file in identify_source_files():
+        text = read_file(file)
+        tree = parser.parse(text)
+
+        if isinstance(tree, Top):
+            base = basename(file)
+            id = base[0:base.index(".")]
+
+            if tree.level is not None:
+                print(f"Level {id}")
+                top, body = tree.level.emit("glsl")
+
+                output_file = f"{id}.level"
+                output_path = f"./src/built/{output_file}.ts"
+                with open(output_path, "w") as handle:
+                    handle.write(f"export const level_{id} = [`\n{top}\n`, `\n{body}\n`];")
+
+                index.write(f"import {{ level_{id} }} from \"./{output_file}\";\n")
+                index.write(f"levels.set(\"{id}\", level_{id});\n")
+
+            if tree.renderer is not None:
+                print(f"Renderer {id}")
+                top, body = tree.renderer.emit("glsl")
+
+                output_file = f"{id}.renderer"
+                output_path = f"./src/built/{output_file}.ts"
+                with open(output_path, "w") as handle:
+                    handle.write(f"export const renderer_{id} = [`\n{top}\n`, `\n{body}\n`];")
+
+                index.write(f"import {{ renderer_{id} }} from \"./{output_file}\";\n")
+                index.write(f"renderers.set(\"{id}\", renderer_{id});\n")
+    
+    index.write("\nconst BUILT = {\n")
+    index.write("    levels: levels,\n")
+    index.write("    renderers: renderers,\n")
+    index.write("};\n");
+    index.write("export default BUILT;\n")
+    
