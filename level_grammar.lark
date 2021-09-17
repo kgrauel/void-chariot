@@ -14,7 +14,6 @@ primitive_type: "void" -> void
               | "vec2" -> vec2
               | "vec3" -> vec3
               | "vec4" -> vec4
-              | "mat2" -> mat2
               | "mat3" -> mat3
               | "mat4" -> mat4
               | "sampler2D" -> sampler2d

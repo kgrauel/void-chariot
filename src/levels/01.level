@@ -4,15 +4,6 @@ level {
     float opSubtraction( float d1, float d2 ) { return max(-d1,d2); }
     float opIntersection( float d1, float d2 ) { return max(d1,d2); }
 
-    vec3 warpTwist(vec3 p, float k)
-    {
-        float c = cos(k*p.y);
-        float s = sin(k*p.y);
-        mat2  m = mat2(c,-s,s,c);
-        vec2  xz = m*p.xz;
-        return vec3(xz.x, p.y, xz.y);
-    }
-
     float sdSphere( vec3 p, float s )
     {
         return length(p)-s;

@@ -8,6 +8,77 @@ import pprint as pp
 def margin(level):
     return "  " * level
 
+REWRITE_TYPES = {
+    "void": "undefined",
+    "float": "number",
+    "int": "number",
+    "vec2": "THREE.Vector2",
+    "vec3": "THREE.Vector3",
+    "vec4": "THREE.Vector4",
+    "mat3": "THREE.Matrix3",
+    "mat4": "THREE.Matrix4",
+    "sampler2D": "THREE.Texture"
+}
+
+REWRITE_CALLS = {
+    "THREE.Vector2": "RT.vector2",
+    "THREE.Vector3": "RT.vector3",
+    "THREE.Vector4": "RT.vector4",
+    "THREE.Matrix3": "RT.matrix3",
+    "THREE.Matrix4": "RT.matrix4",
+    
+    "radians": "RT.radians",
+    "degrees": "RT.degrees",
+    "sin": "RT.sin",
+    "cos": "RT.cos",
+    "tan": "RT.tan",
+    "acos": "RT.acos",
+    "asin": "RT.asin",
+    "atan": "RT.atan",
+    "sinh": "RT.sinh",
+    "cosh": "RT.cosh",
+    "tanh": "RT.tanh",
+    "pow": "RT.pow",
+    "exp": "RT.exp",
+    "log": "RT.log",
+    "exp2": "RT.exp2",
+    "log2": "RT.log2",
+    "sqrt": "RT.sqrt",
+    "inversesqrt": "RT.inversesqrt",
+    "abs": "RT.abs",
+    "sign": "RT.sign",
+    "floor": "RT.floor",
+    "trunc": "RT.trunc",
+    "round": "RT.round",
+    "roundEven": "RT.roundEven",
+    "ceil": "RT.ceil",
+    "fract": "RT.fract",
+    "mod": "RT.mod",
+    "min": "RT.min",
+    "max": "RT.max",
+    "clamp": "RT.clamp",
+    "mix": "RT.mix",
+    "step": "RT.step",
+    "smoothstep": "RT.smoothstep",
+    "isnan": "RT.isnan",
+    "isinf": "RT.isinf",
+    "length": "RT.length",
+    "distance": "RT.distance",
+    "dot": "RT.dot",
+    "cross": "RT.cross",
+    "normalize": "RT.normalize",
+    "faceforward": "RT.faceforward",
+    "reflect": "RT.reflect",
+    "refract": "RT.refract",
+    "outerProduct": "RT.outerProduct",
+    "transpose": "RT.transpose",
+    "determinant": "RT.determinant",
+    "inverse": "RT.inverse",
+    "texture": "RT.texture"
+
+}
+
+
 class Node:
     def emit(self, language, indent=0):
         raise "unimplemented"
@@ -59,14 +130,30 @@ class ShaderContainer(Node):
         return ['\n'.join(top), '\n'.join(body)]
 
 class LevelContainer(ShaderContainer):
-    pass
+    def emit(self, language, indent=0):
+        if language == "glsl":
+            return super().emit(language, indent)
+        
+        body = []
+        body.append("import * as THREE from \"three\";")
+        body.append("import * as RT from \"../shader_runtime\";")
+        body.append("")
+
+        for c in self.children:
+            body.append(c.emit(language))
+
+        return '\n'.join(body);
 
 class RendererContainer(ShaderContainer):
     pass
 
 class PrimitiveType(UnaryOperation):
     def emit(self, language, indent=0):
-        return str(self.value)
+        primitive = str(self.value)
+        if language == "ts":
+            if primitive in REWRITE_TYPES:
+                return REWRITE_TYPES[primitive]
+        return primitive
 
 class ArrayType(BinaryOperation):
     def emit(self, language, indent=0):
@@ -84,11 +171,18 @@ class FunctionDeclaration(Node):
         b = self.identifier.emit(language)
         c = self.parameter.emit(language)
         d = self.block.emit(language)
-        return f"{a} {b}({c}) {d}"
+
+        if language == "glsl":
+            return f"{a} {b}({c}) {d}"
+        else:
+            return f"function {b}({c}): {a} {d}"
     
 class Parameter(BinaryOperation):
     def emit(self, language, indent=0):
-        return f"{self.left.emit(language)} {self.right.emit(language)}"
+        if language == "glsl":
+            return f"{self.left.emit(language)} {self.right.emit(language)}"
+        else:
+            return f"{self.right.emit(language)}: {self.left.emit(language)}"
 
 class VariableDeclaration(Node):
     def __init__(self, children):
@@ -123,7 +217,11 @@ class VariableDeclaration(Node):
         c = self.identifier.emit(language)
         d = "" if self.array_modifier is None else self.array_modifier.emit(language)
         e = "" if self.initializer is None else " " + self.initializer.emit(language)
-        return f"{a}{b} {c}{d}{e}"
+
+        if language == "glsl":
+            return f"{a}{b} {c}{d}{e}"
+        else:
+            return f"let {c}: {b}{d}{e}"
 
 class Qualifiers(Node):
     def __init__(self, children):
@@ -206,11 +304,15 @@ class SimpleStatement(Node):
         self.keyword = keyword
     
     def emit(self, language, indent=0):
+        if language == "ts" and self.keyword == "discard":
+            return "throw new RT.DiscardException();\n";
+        
         return f"{margin(indent)}{self.keyword};\n"
 
 class ReturnStatement(UnaryOperation):
     def emit(self, language, indent=0):
-        return f"{margin(indent)}return{'' if self.value is None else ' ' + str(self.value)};\n"
+        value = '' if self.value is None else ' ' + self.value.emit(language)
+        return f"{margin(indent)}return{value};\n"
 
 class Conditional(Node):
     def __init__(self, condition, if_true, if_false):
@@ -260,15 +362,30 @@ class Decrement(UnaryOperation):
 
 class Indexed(BinaryOperation):
     def emit(self, language, indent=0):
-        return f"{self.left.emit(language)}[int({self.right.emit(language)})]"
+        if language == "glsl":
+            return f"{self.left.emit(language)}[int({self.right.emit(language)})]"
+        else:
+            return f"{self.left.emit(language)}[{self.right.emit(language)}]"
 
 class FunctionCall(BinaryOperation):
     def emit(self, language, indent=0):
-        return f"{self.left.emit(language)}({', '.join(map(lambda a: a.emit(language), self.right))})"
+        left = self.left.emit(language)
+
+        if language == "ts" and left in REWRITE_CALLS:
+            left = REWRITE_CALLS[left]
+
+        return f"{left}({', '.join(map(lambda a: a.emit(language), self.right))})"
 
 class FieldSelection(BinaryOperation):
     def emit(self, language, indent=0):
-        return f"{self.left.emit(language)}.{self.right.emit(language)}"
+        if language == 'glsl':
+            return f"{self.left.emit(language)}.{self.right.emit(language)}"
+        else:
+            field = self.right.emit(language)
+            if field in ["x", "y", "z", "w"]:
+                return f"{self.left.emit(language)}.{self.right.emit(language)}"
+            else:
+                return f"RT.field({self.left.emit(language)}, \"{self.right.emit(language)}\")"
 
 class Group(UnaryOperation):
     def emit(self, language, indent=0):
@@ -408,7 +525,7 @@ with open("./src/built/index.ts", "w") as index:
             id = base[0:base.index(".")]
 
             if tree.level is not None:
-                print(f"Level {id}")
+                print(f"Level GLSL {id}")
                 top, body = tree.level.emit("glsl")
 
                 output_file = f"{id}.level"
@@ -419,8 +536,18 @@ with open("./src/built/index.ts", "w") as index:
                 index.write(f"import {{ level_{id} }} from \"./{output_file}\";\n")
                 index.write(f"levels.set(\"{id}\", level_{id});\n")
 
+                print(f"Level TS {id}")
+                code = tree.level.emit("ts")
+
+                output_file = f"{id}.native"
+                output_path = f"./src/built/{output_file}.ts"
+                with open(output_path, "w") as handle:
+                    handle.write(f"{code}\n")
+
+
+
             if tree.renderer is not None:
-                print(f"Renderer {id}")
+                print(f"Renderer GLSL {id}")
                 top, body = tree.renderer.emit("glsl")
 
                 output_file = f"{id}.renderer"
