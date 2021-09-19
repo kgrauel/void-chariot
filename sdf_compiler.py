@@ -1,5 +1,6 @@
 import functools
 from dataclasses import dataclass
+from typing import Annotated, Any, Dict
 from lark import Lark, Transformer
 from os import listdir
 from os.path import isfile, join, basename
@@ -8,76 +9,103 @@ import pprint as pp
 def margin(level):
     return "  " * level
 
+
+@dataclass
+class VoidType:
+    pass
+
+@dataclass
+class FloatType:
+    pass
+
+@dataclass
+class IntegerType:
+    pass
+
+@dataclass
+class VectorType:
+    primitive: Any
+    size: int
+
+@dataclass
+class MatrixType:
+    size: int
+
+@dataclass
+class SymbolTable:
+    symbols: Dict[str, Any]
+
+
+
 REWRITE_TYPES = {
     "void": "undefined",
     "float": "number",
     "int": "number",
-    "vec2": "THREE.Vector2",
-    "vec3": "THREE.Vector3",
-    "vec4": "THREE.Vector4",
-    "mat3": "THREE.Matrix3",
-    "mat4": "THREE.Matrix4",
-    "sampler2D": "THREE.Texture"
+    "vec2": "number[]",
+    "vec3": "number[]",
+    "vec4": "number[]",
+    "mat3": "number[]",
+    "mat4": "number[]"
 }
+
+DISTRIBUTE = 0
+ACCUMULATE = 1
+VEC3_VEC3 = 2
+VEC_VEC_MAT = 3
+MAT_MAT = 4
 
 REWRITE_CALLS = {
-    "THREE.Vector2": "RT.vector2",
-    "THREE.Vector3": "RT.vector3",
-    "THREE.Vector4": "RT.vector4",
-    "THREE.Matrix3": "RT.matrix3",
-    "THREE.Matrix4": "RT.matrix4",
-    
-    "radians": "RT.radians",
-    "degrees": "RT.degrees",
-    "sin": "RT.sin",
-    "cos": "RT.cos",
-    "tan": "RT.tan",
-    "acos": "RT.acos",
-    "asin": "RT.asin",
-    "atan": "RT.atan",
-    "sinh": "RT.sinh",
-    "cosh": "RT.cosh",
-    "tanh": "RT.tanh",
-    "pow": "RT.pow",
-    "exp": "RT.exp",
-    "log": "RT.log",
-    "exp2": "RT.exp2",
-    "log2": "RT.log2",
-    "sqrt": "RT.sqrt",
-    "inversesqrt": "RT.inversesqrt",
-    "abs": "RT.abs",
-    "sign": "RT.sign",
-    "floor": "RT.floor",
-    "trunc": "RT.trunc",
-    "round": "RT.round",
-    "roundEven": "RT.roundEven",
-    "ceil": "RT.ceil",
-    "fract": "RT.fract",
-    "mod": "RT.mod",
-    "min": "RT.min",
-    "max": "RT.max",
-    "clamp": "RT.clamp",
-    "mix": "RT.mix",
-    "step": "RT.step",
-    "smoothstep": "RT.smoothstep",
-    "isnan": "RT.isnan",
-    "isinf": "RT.isinf",
-    "length": "RT.length",
-    "distance": "RT.distance",
-    "dot": "RT.dot",
-    "cross": "RT.cross",
-    "normalize": "RT.normalize",
-    "faceforward": "RT.faceforward",
-    "reflect": "RT.reflect",
-    "refract": "RT.refract",
-    "outerProduct": "RT.outerProduct",
-    "transpose": "RT.transpose",
-    "determinant": "RT.determinant",
-    "inverse": "RT.inverse",
-    "texture": "RT.texture"
+    "radians": ["RT.radians", DISTRIBUTE],
+    "degrees": ["RT.degrees", DISTRIBUTE],
+    "sin": ["Math.sin", DISTRIBUTE],
+    "cos": ["Math.cos", DISTRIBUTE],
+    "tan": ["Math.tan", DISTRIBUTE],
+    "acos": ["Math.acos", DISTRIBUTE],
+    "asin": ["Math.asin", DISTRIBUTE],
+    "atan": ["RT.atan", DISTRIBUTE],
+    "sinh": ["Math.sinh", DISTRIBUTE],
+    "cosh": ["Math.cosh", DISTRIBUTE],
+    "tanh": ["Math.tanh", DISTRIBUTE],
+    "pow": ["Math.pow", DISTRIBUTE],
+    "exp": ["Math.exp", DISTRIBUTE],
+    "log": ["Math.log", DISTRIBUTE],
+    "exp2": ["RT.exp2", DISTRIBUTE],
+    "log2": ["Math.log2", DISTRIBUTE],
+    "sqrt": ["Math.sqrt", DISTRIBUTE],
+    "inversesqrt": ["RT.inversesqrt", DISTRIBUTE],
+    "abs": ["Math.abs", DISTRIBUTE],
+    "sign": ["Math.sign", DISTRIBUTE],
+    "floor": ["Math.floor", DISTRIBUTE],
+    "trunc": ["RT.trunc", DISTRIBUTE],
+    "round": ["RT.round", DISTRIBUTE],
+    "roundEven": ["RT.roundEven", DISTRIBUTE],
+    "ceil": ["Math.ceil", DISTRIBUTE],
+    "fract": ["RT.fract", DISTRIBUTE],
+    "mod": ["RT.mod", DISTRIBUTE],
+    "min": ["Math.min", DISTRIBUTE],
+    "max": ["Math.max", DISTRIBUTE],
+    "clamp": ["RT.clamp", DISTRIBUTE],
+    "mix": ["RT.mix", DISTRIBUTE],
+    "step": ["RT.step", DISTRIBUTE],
+    "smoothstep": ["RT.smoothstep", DISTRIBUTE],
 
+    "length": ["RT.length", ACCUMULATE],
+    "distance": ["RT.length", ACCUMULATE],
+    "dot": ["RT.dot", ACCUMULATE],
+    "cross": ["RT.cross", VEC3_VEC3],
+    "normalize": ["RT.normalize", DISTRIBUTE],
+    "outerProduct": ["RT.outerProduct", VEC_VEC_MAT],
+    "transpose": ["RT.transpose", MAT_MAT],
+    "determinant": ["RT.determinant", ACCUMULATE],
+    "inverse": ["RT.inverse", MAT_MAT]
 }
 
+def link(me, child):
+    if isinstance(child, Node):
+        child.parent = me
+    if isinstance(child, list):
+        for item in child:
+            link(me, item)
 
 class Node:
     def emit(self, language, indent=0):
@@ -88,10 +116,14 @@ class Node:
 
 class UnaryOperation(Node):
     def __init__(self, value):
+        link(self, value)
         self.value = value
 
 class BinaryOperation(Node):
     def __init__(self, left, right, center=None):
+        link(self, left)
+        link(self, right)
+        link(self, center)
         self.left = left
         self.right = right
         self.center = center
@@ -104,9 +136,11 @@ class BinaryOperation(Node):
 
 class Top(Node):
     def __init__(self, children):
+        self.parent = None
         self.level = None
         self.renderer = None
         for c in children:
+            link(self, c)
             if isinstance(c, LevelContainer):
                 self.level = c
             if isinstance(c, RendererContainer):
@@ -115,6 +149,8 @@ class Top(Node):
 class ShaderContainer(Node):
     def __init__(self, children):
         self.children = children
+        for c in self.children:
+            link(self, c)
     
     def emit(self, language, indent=0):
         top = []
@@ -161,6 +197,10 @@ class ArrayType(BinaryOperation):
 
 class FunctionDeclaration(Node):
     def __init__(self, return_type, identifier, parameters, block):
+        link(self, return_type)
+        link(self, identifier)
+        link(self, parameters)
+        link(self, block)
         self.return_type = return_type
         self.identifier = identifier
         self.parameter = parameters
@@ -186,6 +226,8 @@ class Parameter(BinaryOperation):
 
 class VariableDeclaration(Node):
     def __init__(self, children):
+        link(self, children)
+
         i = 0
         if isinstance(children[i], Qualifiers):
             self.qualifiers = children[i]
@@ -226,6 +268,7 @@ class VariableDeclaration(Node):
 class Qualifiers(Node):
     def __init__(self, children):
         self.children = children
+        link(self, children)
     
     def emit(self, language, indent=0):
         return " ".join(self.children)
@@ -243,6 +286,7 @@ class Initializer(UnaryOperation):
 
 class Block(Node):
     def __init__(self, statements):
+        link(self, statements)
         self.statements = statements
     
     def emit(self, language, indent=0):
@@ -251,6 +295,7 @@ class Block(Node):
 
 class ExpressionStatement(Node):
     def __init__(self, expression):
+        link(self, expression)
         self.expression = expression
     
     def emit(self, language, indent=0):
@@ -258,6 +303,9 @@ class ExpressionStatement(Node):
 
 class IfStatement(Node):
     def __init__(self, condition, if_true, if_false):
+        link(self, condition)
+        link(self, if_true)
+        link(self, if_false)
         self.condition = condition
         self.if_true = if_true
         self.if_false = if_false
@@ -276,6 +324,8 @@ class IfStatement(Node):
 
 class WhileStatement(Node):
     def __init__(self, condition, body):
+        link(self, condition)
+        link(self, body)
         self.condition = condition
         self.body = body
     
@@ -286,6 +336,10 @@ class WhileStatement(Node):
         
 class ForStatement(Node):
     def __init__(self, initializer, condition, increment, body):
+        link(self, initializer)
+        link(self, condition)
+        link(self, increment)
+        link(self, body)
         self.initializer = initializer
         self.condition = condition
         self.increment = increment
@@ -301,6 +355,7 @@ class ForStatement(Node):
 
 class SimpleStatement(Node):
     def __init__(self, keyword):
+        link(self, keyword)
         self.keyword = keyword
     
     def emit(self, language, indent=0):
@@ -316,6 +371,9 @@ class ReturnStatement(UnaryOperation):
 
 class Conditional(Node):
     def __init__(self, condition, if_true, if_false):
+        link(self, condition)
+        link(self, if_true)
+        link(self, if_false)
         self.condition = condition
         self.if_true = if_true
         self.if_false = if_false
@@ -327,6 +385,8 @@ class ManyOperations(Node):
     def __init__(self, sequence, operator=None):
         '''If operator not given, sequence is of form [value, op, value, op, value].
            Otherwise, sequence is a list of operands.'''
+        link(self, sequence)
+        link(self, operator)
         self.sequence = sequence
         self.operator = operator
 
@@ -337,6 +397,8 @@ class ManyOperations(Node):
 
 class PrefixOperation(UnaryOperation):
     def __init__(self, value, operation):
+        link(self, value)
+        link(self, operation)
         self.value = value
         self.operation = operation
 
@@ -371,21 +433,47 @@ class FunctionCall(BinaryOperation):
     def emit(self, language, indent=0):
         left = self.left.emit(language)
 
-        if language == "ts" and left in REWRITE_CALLS:
-            left = REWRITE_CALLS[left]
+        if language == 'glsl':
+            return f"{left}({', '.join(map(lambda a: a.emit(language), self.right))})"
+        elif left in ["vec2", "vec3", "vec4"]:
+            pass
+        raise "todo"
+            
+            
 
-        return f"{left}({', '.join(map(lambda a: a.emit(language), self.right))})"
+
+FIELDS = {
+    "x": 0, "y": 1, "z": 2, "w": 3,
+    "r": 0, "g": 1, "b": 2, "a": 3,
+    "s": 0, "t": 1, "p": 2, "q": 3
+}
 
 class FieldSelection(BinaryOperation):
     def emit(self, language, indent=0):
         if language == 'glsl':
+            
+            location = self
+            stack = []
+            while location is not None:
+                stack.append(location)
+                location = location.parent
+            print(" -> ".join(map(lambda x: type(x).__name__, stack)))
+
             return f"{self.left.emit(language)}.{self.right.emit(language)}"
         else:
+            source = self.left.emit(language)
+            if not isinstance(source, list):
+                raise "tried to select field from non vector"
             field = self.right.emit(language)
-            if field in ["x", "y", "z", "w"]:
-                return f"{self.left.emit(language)}.{self.right.emit(language)}"
-            else:
-                return f"RT.field({self.left.emit(language)}, \"{self.right.emit(language)}\")"
+            items = []
+            for c in field:
+                if c in FIELDS:
+                    index = FIELDS[c]
+                    items.append(f"{source}[{index}]")
+                else:
+                    raise "unrecognized field letter"
+            return items
+            
 
 class Group(UnaryOperation):
     def emit(self, language, indent=0):
@@ -536,13 +624,13 @@ with open("./src/built/index.ts", "w") as index:
                 index.write(f"import {{ level_{id} }} from \"./{output_file}\";\n")
                 index.write(f"levels.set(\"{id}\", level_{id});\n")
 
-                print(f"Level TS {id}")
-                code = tree.level.emit("ts")
+                # print(f"Level TS {id}")
+                # code = tree.level.emit("ts")
 
-                output_file = f"{id}.native"
-                output_path = f"./src/built/{output_file}.ts"
-                with open(output_path, "w") as handle:
-                    handle.write(f"{code}\n")
+                # output_file = f"{id}.native"
+                # output_path = f"./src/built/{output_file}.ts"
+                # with open(output_path, "w") as handle:
+                #     handle.write(f"{code}\n")
 
 
 
