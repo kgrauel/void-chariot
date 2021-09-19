@@ -4,35 +4,42 @@ from typing import Annotated, Any, Dict
 @dataclass
 class VoidType:
     def arity(self): return 0
+    def primitive_type(self): return self
 
 @dataclass
 class BooleanType:
     def arity(self): return 1
+    def primitive_type(self): return self
 
 @dataclass
 class FloatType:
     def arity(self): return 1
+    def primitive_type(self): return self
 
 @dataclass
 class IntegerType:
     def arity(self): return 1
+    def primitive_type(self): return self
 
 @dataclass
 class ArrayType:
     primitive: Any
     size: int
     def arity(self): return self.size
+    def primitive_type(self): return self.primitive
 
 @dataclass
 class VectorType:
     primitive: Any
     size: int
     def arity(self): return self.size
+    def primitive_type(self): return self.primitive
 
 @dataclass
 class MatrixType:
     size: int
     def arity(self): return self.size * self.size
+    def primitive_type(self): return FloatType()
 
 
 REWRITE_TYPES = {
