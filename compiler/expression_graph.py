@@ -1,5 +1,6 @@
 import functools
 from dataclasses import dataclass
+from os import X_OK
 from typing import Annotated, Any, Dict
 import pprint as pp
 from common import * 
@@ -23,11 +24,6 @@ class Attachment:
 
 class Node:
     def __init__(self, formatter, state=None):
-        global next_id
-
-        self.id = str(next_id)
-        next_id += 1
-
         self.inputs = dict()
         self.outputs = dict()
         self.formatter = formatter
@@ -72,23 +68,47 @@ def f_literal(n, inputs):
 def f_binary_ss(n, inputs):
     left = inputs["left"]
     right = inputs["right"]
-    return { "result": f"{left} {n.state['operation']} {right}" }
+    return { "result": n.state["combiner"](left, right) }
 
 def f_binary_vv(n, inputs):
     left = map(lambda i: f"{inputs['left']}[{i}]", range(n.inputs["left"].data_type.arity()))
     right = map(lambda i: f"{inputs['right']}[{i}]", range(n.inputs["right"].data_type.arity()))
-    paired = map(lambda x: f"({x[0]}{n.state['operation']}{x[1]})", zip(left, right))
+    paired = map(lambda x: n.state["combiner"](x[0], x[1]), zip(left, right))
     return { "result": f"[{','.join(paired)}]" }
 
 def f_binary_sv(n, inputs):
     left = inputs["left"]
     right = list(map(lambda i: f"{inputs['right']}[{i}]", range(n.inputs["right"].data_type.arity())))
-    paired = list(map(lambda x: f"{left}{n.state['operation']}{x}", right))
+    paired = list(map(lambda x: n.state["combiner"](left, x), right))
     return { "result": f"[{','.join(paired)}]" }
 
 def f_reflow(n, inputs):
-    pass
+    mapping = []
+    for ii in range(len(n.inputs)):
+        input = n.inputs[f"input_{ii}"]
+        if isinstance(input.data_type, FloatType) or isinstance(input.data_type, IntegerType):
+            mapping.append(inputs[f"input_{ii}"])
+        else:
+            for a in range(input.data_type.arity()):
+                mapping.append(inputs[f"input_{ii}"] + f"[{a}]")
 
+    outputs = dict()
+
+    ii = 0
+    for oi in range(len(n.outputs)):
+        output = n.outputs[f"output_{oi}"]
+
+        if isinstance(output.data_type, FloatType) or isinstance(output.data_type, IntegerType):
+            outputs[output.name] = mapping[ii]
+            ii += 1
+        else:
+            items = []
+            for a in range(output.data_type.arity()):
+                items.append(mapping[ii])
+                ii += 1
+            outputs[output.name] = f"[{','.join(items)}]"
+    
+    return outputs
 
 
 # NODE CONSTRUCTORS
@@ -102,33 +122,32 @@ def n_integer(value):
 def n_identifier(name, data_type):
     return Node(f_literal, {"value": name}).output("result", data_type)
 
-def n_binary(op, dt1, dt2):
+def n_binary(combiner, dt1, dt2):
     if (isinstance(dt1, FloatType) and isinstance(dt2, FloatType)) \
         or (isinstance(dt1, IntegerType) and isinstance(dt2, IntegerType)):
             prim = dt1
-            return Node(f_binary_ss, {"operation": op}) \
+            return Node(f_binary_ss, {"combiner": combiner}) \
                 .parameter("left", prim).parameter("right", prim).output("result", prim)
     
     if isinstance(dt1, VectorType) and isinstance(dt2, VectorType):
         if dt1.arity() != dt2.arity():
             raise "vector types have differing arities"
-        return Node(f_binary_vv, {"operation": op}) \
+        return Node(f_binary_vv, {"combiner": combiner}) \
             .parameter("left", dt1).parameter("right", dt2).output("result", dt1)
 
     if isinstance(dt1, VectorType) and isinstance(dt2, FloatType):
-        return Node(f_binary_sv, {"operation": op}) \
+        return Node(f_binary_sv, {"combiner": combiner}) \
             .parameter("left", dt2).parameter("right", dt1).output("result", dt1)
 
     if isinstance(dt1, FloatType) and isinstance(dt2, VectorType):
-        return Node(f_binary_sv, {"operation": op}) \
+        return Node(f_binary_sv, {"combiner": combiner}) \
             .parameter("left", dt1).parameter("right", dt2).output("result", dt2)
     
-    raise ValueError(f"binary operator {op} not applicable to types {dt1}, {dt2}")
+    raise ValueError(f"binary operator not applicable to types {dt1}, {dt2}")
 
 def n_reflow(in_types, out_types, indices=None):
     in_count = 0
     primitive = None
-    mapping = []
 
     for k, t in enumerate(in_types):
         if isinstance(t, VoidType) or isinstance(t, ArrayType):
@@ -136,8 +155,6 @@ def n_reflow(in_types, out_types, indices=None):
 
         arity = t.arity()
         in_count += arity
-        for i in range(arity):
-            mapping.append((k, i))
 
         if primitive is None:
             primitive = t.primitive_type()
@@ -161,10 +178,10 @@ def n_reflow(in_types, out_types, indices=None):
     if out_count != in_count:
         raise TypeError(f"reflow from {in_count} to {out_count} arity is impossible")
 
-    node = Node(f_reflow, {"mapping": mapping})
-    for i in range(in_count):
+    node = Node(f_reflow, {})
+    for i in range(len(in_types)):
         node.parameter(f"input_{i}", in_types[i])
-    for i in range(out_count):
+    for i in range(len(out_types)):
         node.output(f"output_{i}", out_types[i])
 
     return node
@@ -178,12 +195,9 @@ class CodeGenerator:
         self.leaves = deque()
         self.in_degree = dict()
         self.enumerate_nodes(node)
-        print(self.leaves)
-        print(self.in_degree)
 
         self.processing_order = []
         self.topological_sort()
-        print(self.processing_order)
 
         self.lines = []
         self.output_names = dict()
@@ -205,7 +219,7 @@ class CodeGenerator:
     
     def generate_intermediate_name(self):
         global next_id
-        result = f"_t{next_id}"
+        result = f"t{next_id}_"
         next_id += 1
         return result
 
@@ -249,7 +263,7 @@ class CodeGenerator:
 def test():
     a = n_float(10)
     b = n_identifier("f", FLOAT)
-    c = n_binary("-", FLOAT, FLOAT)
+    c = n_binary(lambda x, y: f"{x}-{y}", FLOAT, FLOAT)
 
     a.send("result", c, "left")
     b.send("result", c, "right")
@@ -261,10 +275,10 @@ def test():
     
     a = n_identifier("x", VectorType(FLOAT, 3))
     b = n_identifier("y", VectorType(FLOAT, 3))
-    c = n_binary("-", VectorType(FLOAT, 3), VectorType(FLOAT, 3))
+    c = n_binary(lambda x, y: f"{x}-{y}", VectorType(FLOAT, 3), VectorType(FLOAT, 3))
 
     d = n_float(10)
-    e = n_binary("*", FLOAT, VectorType(FLOAT, 3))
+    e = n_binary(lambda x, y: f"mod({x},{y})", FLOAT, VectorType(FLOAT, 3))
 
     a.send("result", c, "left")
     b.send("result", c, "right")
@@ -275,4 +289,17 @@ def test():
     pp.pp(cg.lines)
     pp.pp(cg.terminals)
     
+    a = n_identifier("x", VectorType(FLOAT, 3))
+    b = n_identifier("y", VectorType(FLOAT, 2))
+    c = n_float(5)
+
+    f = n_reflow([VectorType(FLOAT, 3), VectorType(FLOAT, 2), FLOAT], [VectorType(FLOAT, 4), VectorType(FLOAT, 2)])
+    a.send("result", f, "input_0")
+    b.send("result", f, "input_1")
+    c.send("result", f, "input_2")
+
+    cg = CodeGenerator(f, {"output_0": "aa", "output_1": "bb"})
+    pp.pp(cg.lines)
+    pp.pp(cg.terminals)
+
 test()
