@@ -5,100 +5,12 @@ from lark import Lark, Transformer
 from os import listdir
 from os.path import isfile, join, basename
 import pprint as pp
+from common import * 
 
 def margin(level):
     return "  " * level
 
 
-@dataclass
-class VoidType:
-    pass
-
-@dataclass
-class FloatType:
-    pass
-
-@dataclass
-class IntegerType:
-    pass
-
-@dataclass
-class VectorType:
-    primitive: Any
-    size: int
-
-@dataclass
-class MatrixType:
-    size: int
-
-@dataclass
-class SymbolTable:
-    symbols: Dict[str, Any]
-
-
-
-REWRITE_TYPES = {
-    "void": "undefined",
-    "float": "number",
-    "int": "number",
-    "vec2": "number[]",
-    "vec3": "number[]",
-    "vec4": "number[]",
-    "mat3": "number[]",
-    "mat4": "number[]"
-}
-
-DISTRIBUTE = 0
-ACCUMULATE = 1
-VEC3_VEC3 = 2
-VEC_VEC_MAT = 3
-MAT_MAT = 4
-
-REWRITE_CALLS = {
-    "radians": ["RT.radians", DISTRIBUTE],
-    "degrees": ["RT.degrees", DISTRIBUTE],
-    "sin": ["Math.sin", DISTRIBUTE],
-    "cos": ["Math.cos", DISTRIBUTE],
-    "tan": ["Math.tan", DISTRIBUTE],
-    "acos": ["Math.acos", DISTRIBUTE],
-    "asin": ["Math.asin", DISTRIBUTE],
-    "atan": ["RT.atan", DISTRIBUTE],
-    "sinh": ["Math.sinh", DISTRIBUTE],
-    "cosh": ["Math.cosh", DISTRIBUTE],
-    "tanh": ["Math.tanh", DISTRIBUTE],
-    "pow": ["Math.pow", DISTRIBUTE],
-    "exp": ["Math.exp", DISTRIBUTE],
-    "log": ["Math.log", DISTRIBUTE],
-    "exp2": ["RT.exp2", DISTRIBUTE],
-    "log2": ["Math.log2", DISTRIBUTE],
-    "sqrt": ["Math.sqrt", DISTRIBUTE],
-    "inversesqrt": ["RT.inversesqrt", DISTRIBUTE],
-    "abs": ["Math.abs", DISTRIBUTE],
-    "sign": ["Math.sign", DISTRIBUTE],
-    "floor": ["Math.floor", DISTRIBUTE],
-    "trunc": ["RT.trunc", DISTRIBUTE],
-    "round": ["RT.round", DISTRIBUTE],
-    "roundEven": ["RT.roundEven", DISTRIBUTE],
-    "ceil": ["Math.ceil", DISTRIBUTE],
-    "fract": ["RT.fract", DISTRIBUTE],
-    "mod": ["RT.mod", DISTRIBUTE],
-    "min": ["Math.min", DISTRIBUTE],
-    "max": ["Math.max", DISTRIBUTE],
-    "clamp": ["RT.clamp", DISTRIBUTE],
-    "mix": ["RT.mix", DISTRIBUTE],
-    "step": ["RT.step", DISTRIBUTE],
-    "smoothstep": ["RT.smoothstep", DISTRIBUTE],
-
-    "length": ["RT.length", ACCUMULATE],
-    "distance": ["RT.length", ACCUMULATE],
-    "dot": ["RT.dot", ACCUMULATE],
-    "cross": ["RT.cross", VEC3_VEC3],
-    "normalize": ["RT.normalize", DISTRIBUTE],
-    "outerProduct": ["RT.outerProduct", VEC_VEC_MAT],
-    "transpose": ["RT.transpose", MAT_MAT],
-    "determinant": ["RT.determinant", ACCUMULATE],
-    "inverse": ["RT.inverse", MAT_MAT]
-}
 
 def link(me, child):
     if isinstance(child, Node):
@@ -113,6 +25,38 @@ class Node:
 
     def __repr__(self):
         return self.emit("glsl")
+
+    def get_symbol_from_own_table(self, symbol):
+        return None
+
+    def get_symbol(self, symbol):
+        current = self
+        while current is not None:
+            self_check = current.get_symbol_from_own_table(symbol)
+            if self_check is not None:
+                return self_check
+            current = current.parent
+
+        return None
+
+    def gather_symbols(self):
+        pass
+        #print(f"bounce {type(self).__name__}") 
+
+    def register_symbol_in_own_table(self, name, type_information):
+        return False
+
+    def declare_symbol(self, name, type_information):
+        current = self
+        while current is not None:
+            result = current.register_symbol_in_own_table(name, type_information)
+            if result:
+                return True
+            current = current.parent
+        
+        raise "could not declare symbol"
+
+
 
 class UnaryOperation(Node):
     def __init__(self, value):
@@ -139,25 +83,51 @@ class Top(Node):
         self.parent = None
         self.level = None
         self.renderer = None
+
         for c in children:
             link(self, c)
             if isinstance(c, LevelContainer):
                 self.level = c
             if isinstance(c, RendererContainer):
                 self.renderer = c
+        
+        self.gather_symbols()
+    
+    def gather_symbols(self):
+        if self.level is not None:
+            self.level.gather_symbols()
+        if self.renderer is not None:
+            self.renderer.gather_symbols()
+
 
 class ShaderContainer(Node):
     def __init__(self, children):
         self.children = children
+        self.table = dict()
+
         for c in self.children:
             link(self, c)
     
+    def get_symbol_from_own_table(self, symbol):
+        if symbol in self.table:
+            return self.table[symbol]
+        else:
+            return None
+
+    def register_symbol_in_own_table(self, name, type_information):
+        #print(f"registered {name}")
+        self.table[name] = type_information
+        return True
+
+    def gather_symbols(self):
+        for c in self.children:
+            c.gather_symbols()
+
     def emit(self, language, indent=0):
         top = []
         body = []
 
         for c in self.children:
-            #print(type(c))
             if isinstance(c, ExpressionStatement):
                 top.append(c.emit(language))
             else:
@@ -203,26 +173,64 @@ class FunctionDeclaration(Node):
         link(self, block)
         self.return_type = return_type
         self.identifier = identifier
-        self.parameter = parameters
+        self.parameters = parameters
         self.block = block
+    
+    def gather_symbols(self):
+        type_name = self.return_type.emit("glsl")
+        if type_name not in REWRITE_TYPES:
+            raise "unknown return type from function declaration ({type_name})"
+
+        self.declare_symbol(
+            self.identifier.emit("glsl"),
+            REWRITE_TYPES[type_name]
+        )
+
+        self.parameters.gather_symbols()
+        self.block.gather_symbols()
     
     def emit(self, language, indent=0):
         a = self.return_type.emit(language)
         b = self.identifier.emit(language)
-        c = self.parameter.emit(language)
+        c = self.parameters.emit(language)
         d = self.block.emit(language)
 
         if language == "glsl":
             return f"{a} {b}({c}) {d}"
         else:
             return f"function {b}({c}): {a} {d}"
+
+class Parameters(Node):
+    def __init__(self, children):
+        self.children = children
+        for c in self.children:
+            link(self, c)
+
+    def gather_symbols(self):
+        for c in self.children:
+            c.gather_symbols()
+    
+    def emit(self, language, indent=0):
+        return ", ".join(map(lambda x: x.emit(language), self.children))
     
 class Parameter(BinaryOperation):
+    def gather_symbols(self):
+        type_name = self.left.emit("glsl")
+        if type_name not in REWRITE_TYPES:
+            raise "unknown parameter type ({type_name})"
+
+        self.declare_symbol(
+            self.right.emit("glsl"),
+            REWRITE_TYPES[type_name]
+        )
+
     def emit(self, language, indent=0):
         if language == "glsl":
             return f"{self.left.emit(language)} {self.right.emit(language)}"
         else:
             return f"{self.right.emit(language)}: {self.left.emit(language)}"
+
+    
 
 class VariableDeclaration(Node):
     def __init__(self, children):
@@ -252,6 +260,16 @@ class VariableDeclaration(Node):
             i += 1
         else:
             self.initializer = None
+
+    def gather_symbols(self):
+        type_name = self.data_type.emit("glsl")
+        if type_name not in REWRITE_TYPES:
+            raise "unknown data type of variable ({type_name})"
+
+        self.declare_symbol(
+            self.identifier.emit("glsl"),
+            REWRITE_TYPES[type_name]
+        )
     
     def emit(self, language, indent=0):
         a = "" if self.qualifiers is None else f"{self.qualifiers.emit(language)} "
@@ -288,6 +306,22 @@ class Block(Node):
     def __init__(self, statements):
         link(self, statements)
         self.statements = statements
+        self.table = dict()
+    
+    def gather_symbols(self):
+        for s in self.statements:
+            s.gather_symbols()
+
+    def get_symbol_from_own_table(self, symbol):
+        if symbol in self.table:
+            return self.table[symbol]
+        else:
+            return None
+
+    def register_symbol_in_own_table(self, name, type_information):
+        #print(f"registered {name}")
+        self.table[name] = type_information
+        return True
     
     def emit(self, language, indent=0):
         fn = lambda x: x.emit(language, indent + 1)
@@ -297,6 +331,9 @@ class ExpressionStatement(Node):
     def __init__(self, expression):
         link(self, expression)
         self.expression = expression
+
+    def gather_symbols(self):
+        self.expression.gather_symbols()
     
     def emit(self, language, indent=0):
         return f"{margin(indent)}{self.expression.emit(language, 0)};\n"
@@ -310,6 +347,11 @@ class IfStatement(Node):
         self.if_true = if_true
         self.if_false = if_false
     
+    def gather_symbols(self):
+        self.if_true.gather_symbols()
+        if self.if_false is not None:
+            self.if_false.gather_symbols()
+
     def emit(self, language, indent=0):
         first, rest = (indent if isinstance(indent, list) else [indent, indent])
         c = self.condition.emit(language, 0)
@@ -328,6 +370,9 @@ class WhileStatement(Node):
         link(self, body)
         self.condition = condition
         self.body = body
+
+    def gather_symbols(self):
+        self.body.gather_symbols()
     
     def emit(self, language, indent=0):
         c = self.condition.emit(language, 0)
@@ -344,6 +389,10 @@ class ForStatement(Node):
         self.condition = condition
         self.increment = increment
         self.body = body
+    
+    def gather_symbols(self):
+        self.initializer.gather_symbols()
+        self.body.gather_symbols()
     
     def emit(self, language, indent=0):
         a = "" if isinstance(self.initializer, str) else self.initializer.emit(language, 0)
@@ -452,12 +501,12 @@ class FieldSelection(BinaryOperation):
     def emit(self, language, indent=0):
         if language == 'glsl':
             
-            location = self
-            stack = []
-            while location is not None:
-                stack.append(location)
-                location = location.parent
-            print(" -> ".join(map(lambda x: type(x).__name__, stack)))
+            # location = self
+            # stack = []
+            # while location is not None:
+            #     stack.append(location)
+            #     location = location.parent
+            # print(" -> ".join(map(lambda x: f"{type(x).__name__} {x.get_symbol('p')}", stack)))
 
             return f"{self.left.emit(language)}.{self.right.emit(language)}"
         else:
@@ -481,6 +530,7 @@ class Group(UnaryOperation):
 
 class Identifier(UnaryOperation):
     def emit(self, language, indent=0):
+        #print(f"{self.value} -> {self.get_symbol(self.value)}")
         return self.value
 
 class LiteralFloat(UnaryOperation):
@@ -512,7 +562,7 @@ class Intermediate(Transformer):
 
     def array_type(self, c): return ArrayType(c[0], c[1])
     def function_declaration(self, c): return FunctionDeclaration(c[0], c[1], c[2], c[3])
-    def parameters(self, c): return ManyOperations(c, operator=", ")
+    def parameters(self, c): return Parameters(c)
     def parameter(self, c): return Parameter(c[0], c[1])
     def var_declaration(self, c): return VariableDeclaration(c)
     def qualifiers(self, c): return Qualifiers(c)
@@ -571,6 +621,11 @@ class Intermediate(Transformer):
     def negative(self, c): return "-"
     def logical_not(self, c): return "!"
     def NUMBER(self, c): return LiteralFloat(c)   # c is not a list here..???
+
+
+
+
+
 
 
 

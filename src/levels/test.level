@@ -1,0 +1,10 @@
+level {
+    uniform mat4 sample;
+    vec3 test(float a, vec2 b) {
+        if (b.x > 0) {
+            float c = b.y * 2.0;
+            b.y = c;
+        }
+        return vec3(a, b);
+    }
+}
