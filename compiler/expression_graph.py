@@ -65,6 +65,9 @@ class Node:
 def f_literal(n, inputs):
     return { "result": str(n.state["value"]) }
 
+def f_unary(n, inputs):
+    return { "result": n.state["combiner"](inputs["value"]) }
+
 def f_binary_ss(n, inputs):
     left = inputs["left"]
     right = inputs["right"]
@@ -81,6 +84,23 @@ def f_binary_sv(n, inputs):
     right = list(map(lambda i: f"{inputs['right']}[{i}]", range(n.inputs["right"].data_type.arity())))
     paired = list(map(lambda x: n.state["combiner"](left, x), right))
     return { "result": f"[{','.join(paired)}]" }
+
+def f_binary_vs(n, inputs):
+    left = list(map(lambda i: f"{inputs['left']}[{i}]", range(n.inputs["left"].data_type.arity())))
+    right = inputs["right"]
+    paired = list(map(lambda x: n.state["combiner"](x, right), left))
+    return { "result": f"[{','.join(paired)}]" }
+
+def f_branch(n, inputs):
+    return { "result": f"{inputs['condition']} ? {inputs['if_true']} : {inputs['if_false']}" }
+
+def f_call(n, inputs):
+    parameters = []
+    for ii in range(len(n.inputs)):
+        parameters.append(inputs[f"input_{ii}"])
+    
+    return { "result": f"{n.state['function_name']}({', '.join(parameters)})" }
+
 
 def f_reflow(n, inputs):
     mapping = []
@@ -111,6 +131,7 @@ def f_reflow(n, inputs):
     return outputs
 
 
+
 # NODE CONSTRUCTORS
 
 def n_float(value):
@@ -122,28 +143,50 @@ def n_integer(value):
 def n_identifier(name, data_type):
     return Node(f_literal, {"value": name}).output("result", data_type)
 
-def n_binary(combiner, dt1, dt2):
+def n_unary(combiner, dt_in, dt_out):
+    return Node(f_unary, {"combiner": combiner}) \
+        .parameter("value", dt_in).output("result", dt_out)
+
+def n_binary(combiner, dt1, dt2, dt_out=None):
     if (isinstance(dt1, FloatType) and isinstance(dt2, FloatType)) \
-        or (isinstance(dt1, IntegerType) and isinstance(dt2, IntegerType)):
+        or (isinstance(dt1, IntegerType) and isinstance(dt2, IntegerType)) \
+        or (isinstance(dt1, BooleanType) and isinstance(dt2, BooleanType)):
             prim = dt1
             return Node(f_binary_ss, {"combiner": combiner}) \
-                .parameter("left", prim).parameter("right", prim).output("result", prim)
+                .parameter("left", prim).parameter("right", prim) \
+                .output("result", prim if dt_out is None else dt_out)
     
     if isinstance(dt1, VectorType) and isinstance(dt2, VectorType):
         if dt1.arity() != dt2.arity():
             raise "vector types have differing arities"
         return Node(f_binary_vv, {"combiner": combiner}) \
-            .parameter("left", dt1).parameter("right", dt2).output("result", dt1)
+            .parameter("left", dt1).parameter("right", dt2) \
+            .output("result", dt1 if dt_out is None else dt_out)
 
     if isinstance(dt1, VectorType) and isinstance(dt2, FloatType):
-        return Node(f_binary_sv, {"combiner": combiner}) \
-            .parameter("left", dt2).parameter("right", dt1).output("result", dt1)
+        return Node(f_binary_vs, {"combiner": combiner}) \
+            .parameter("left", dt1).parameter("right", dt2) \
+            .output("result", dt1 if dt_out is None else dt_out)
 
     if isinstance(dt1, FloatType) and isinstance(dt2, VectorType):
         return Node(f_binary_sv, {"combiner": combiner}) \
-            .parameter("left", dt1).parameter("right", dt2).output("result", dt2)
+            .parameter("left", dt1).parameter("right", dt2) \
+            .output("result", dt2 if dt_out is None else dt_out)
     
     raise ValueError(f"binary operator not applicable to types {dt1}, {dt2}")
+
+def n_branch(dt_in, dt_out):
+    return Node(f_branch, {} \
+        .parameter("condition", BOOLEAN).parameter("if_true", dt_in).parameter("if_false", dt_in)) \
+        .output("result", dt_out)
+
+def n_call(function_name, in_types, out_type):
+    node = Node(f_call, {"function_name": function_name})
+    for i in range(len(in_types)):
+        node.parameter(f"input_{i}", in_types[i])
+    node.output(f"result", out_type)
+
+    return node
 
 def n_reflow(in_types, out_types, indices=None):
     in_count = 0
@@ -165,7 +208,7 @@ def n_reflow(in_types, out_types, indices=None):
         raise ValueError(f"cannot reflow {in_types}; the collective arity is {in_count}")
 
     if indices is None:
-        indices = list(range(in_count))
+        indices = list(range(in_count))  # to do
 
     out_count = 0
     for t in out_types:
@@ -178,7 +221,7 @@ def n_reflow(in_types, out_types, indices=None):
     if out_count != in_count:
         raise TypeError(f"reflow from {in_count} to {out_count} arity is impossible")
 
-    node = Node(f_reflow, {})
+    node = Node(f_reflow, {"indices": indices})
     for i in range(len(in_types)):
         node.parameter(f"input_{i}", in_types[i])
     for i in range(len(out_types)):
@@ -188,7 +231,8 @@ def n_reflow(in_types, out_types, indices=None):
 
 
 
-# OUTPUT
+
+# CODE GENERATION
 
 class CodeGenerator:
     def __init__(self, node, terminal_names=None):
@@ -207,7 +251,7 @@ class CodeGenerator:
 
     def enumerate_nodes(self, node):
         if node in self.in_degree:
-            raise ValueError("found cycle in expression DAG")
+            return
         
         self.in_degree[node] = len(node.inputs)
         if len(node.inputs) == 0:
@@ -289,11 +333,14 @@ def test():
     pp.pp(cg.lines)
     pp.pp(cg.terminals)
     
-    a = n_identifier("x", VectorType(FLOAT, 3))
+    d = n_identifier("d", VectorType(FLOAT, 3))
+    a = n_call("RT.mod", [VectorType(FLOAT, 3), VectorType(FLOAT, 3)], VectorType(FLOAT, 3))
     b = n_identifier("y", VectorType(FLOAT, 2))
     c = n_float(5)
 
     f = n_reflow([VectorType(FLOAT, 3), VectorType(FLOAT, 2), FLOAT], [VectorType(FLOAT, 4), VectorType(FLOAT, 2)])
+    d.send("result", a, "input_0")
+    d.send("result", a, "input_1")
     a.send("result", f, "input_0")
     b.send("result", f, "input_1")
     c.send("result", f, "input_2")

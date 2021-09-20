@@ -55,7 +55,7 @@ discard_statement: "discard" ";"
 
 // EXPRESSIONS
 
-?expression: assignment
+expression: assignment
 ?assignment: conditional (ass_op conditional)*
 ?conditional: or_expression ("?" expression ":" assignment)?
 ?or_expression: and_expression ("||" and_expression)*

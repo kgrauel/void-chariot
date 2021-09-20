@@ -418,6 +418,17 @@ class ReturnStatement(UnaryOperation):
         value = '' if self.value is None else ' ' + self.value.emit(language)
         return f"{margin(indent)}return{value};\n"
 
+class Expression(Node):
+    def __init__(self, expression):
+        self.expression = expression
+
+    def emit(self, language, indent=0):
+        if language == 'glsl':
+            return self.expression.emit('glsl')
+        else:
+            print("EXPRESSION GUARD")  # TODO
+            return "ASDASD"
+
 class Conditional(Node):
     def __init__(self, condition, if_true, if_false):
         link(self, condition)
@@ -583,6 +594,7 @@ class Intermediate(Transformer):
     def return_statement(self, c): return ReturnStatement(c[0] if len(c) > 0 else None)
     def discard_statement(self, c): return SimpleStatement("discard")
 
+    def expression(self, c): return Expression(c[0])
     def assignment(self, c): return ManyOperations(c)
     def conditional(self, c): return Conditional(c[0], c[1], c[2])
     def or_expression(self, c): return ManyOperations(c, operator=" || ")
@@ -635,7 +647,7 @@ def read_file(filename):
     return content
 
 def make_parser():
-    grammar = read_file("level_grammar.lark")
+    grammar = read_file("./compiler/level_grammar.lark")
     return Lark(grammar, start="top", parser="lalr", transformer=Intermediate())
 
 def list_files(directory):
