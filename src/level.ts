@@ -1,5 +1,7 @@
 import * as THREE from "three";
 import { APP } from "./app";
+import BUILT from "./built";
+import { NativeLevel } from "./shader_runtime";
 
 export default class Level {
     cameraPosition: THREE.Vector3;
@@ -8,7 +10,26 @@ export default class Level {
     cameraMoveSpeed: number;
     cameraRotateSpeed: number;
 
-    constructor() {
+    levelName: string;
+    nativeLevel: any;
+
+    constructor(levelName: string) {
+        this.levelName = levelName;
+
+        let nativeLevel = BUILT.natives.get(this.levelName);
+        if (nativeLevel === undefined) {
+            throw `could not find native for level ${this.levelName}`;
+        }
+        this.nativeLevel = nativeLevel;
+
+        let start = Date.now();
+        let total = 0;
+        for (let i = 0; i < 1000000; i++) {
+            total += this.nativeLevel.sdf([Math.random(), Math.random(), Math.random()]);
+        }
+        let elapsed = Date.now() - start;
+        console.log(`total ${total}, elapsed ${elapsed}`)
+
         this.cameraPosition = new THREE.Vector3(0, 1, 2);
         this.cameraYaw = 0;
         this.cameraPitch = 0;
@@ -29,6 +50,9 @@ export default class Level {
     }
 
     doPhysics(delta: number) {
+        this.nativeLevel.iTime = APP.timer.getTotalElapsed();
+        document.getElementById("sdf")!.innerText = `${this.nativeLevel.sdf(this.cameraPosition.toArray())}`;
+
         if (APP.pressedKeys.has("w")) {
             this.cameraPosition.addScaledVector(this.getCameraForward(), delta * this.cameraMoveSpeed);
         }

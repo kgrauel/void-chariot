@@ -1,7 +1,7 @@
 
 level {
-    uniform float iTime;
-    
+    uniform float iTime = 0;
+
     float opUnion( float d1, float d2 ) { return min(d1,d2); }
     float opSubtraction( float d1, float d2 ) { return max(-d1,d2); }
     float opIntersection( float d1, float d2 ) { return max(d1,d2); }
@@ -25,7 +25,7 @@ level {
     {
         p.x = abs(p.x);
         float k = (sc.y*p.x>sc.x*p.y) ? dot(p.xy,sc) : length(p.xy);
-        return sqrt( dot(p,p) + ra*ra - 2.0*ra*k ) - rb;
+        return sqrt(max(0.0, dot(p,p) + ra*ra - 2.0*ra*k)) - rb;
     }
 
     float sdf(vec3 p)
@@ -37,7 +37,7 @@ level {
         v = opSubtraction(sdSphere(abs(p) - vec3(1.0, 0.2, 1.0), 0.5), v);
         v = min(v, sdCappedTorus(p, vec2(sin(an), cos(an)), 0.5, 0.2));
         v = min(v, sdBoxFrame(p - vec3(0.0, 0.45, 0.0), vec3(0.2, 0.3, 0.3), 0.03));
-        v = opIntersection(v, abs(p.x) * sin(iTime) + abs(p.z) * cos(iTime) - 0.3);
+        v = opIntersection(v, abs(p.x) * sin(iTime / 3) + abs(p.z) * cos(iTime / 3) - 0.3);
         return v;
     }
 

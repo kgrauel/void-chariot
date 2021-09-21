@@ -6,6 +6,9 @@ class App {
     view: View;
     timer: Timer;
     level: Level;
+
+    rendererName: string;
+    levelName: string;
     
     debugMessage: string;
 
@@ -24,9 +27,12 @@ class App {
         this.dragDeltaThisFrame = null;
 
         try {
+            this.levelName = "01";
+            this.rendererName = "ao";
+
             this.timer = new Timer();
-            this.level = new Level();
-            this.view = new View();
+            this.level = new Level(this.levelName);
+            this.view = new View(this.levelName, this.rendererName);
 
             this.registerEventHandlers();
         } catch (e: any) {

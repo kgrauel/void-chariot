@@ -6,16 +6,21 @@ export default class View {
     
     renderGraph: RenderGraph;
     
+    levelName: string;
+    rendererName: string;
 
-    constructor() {
+
+    constructor(levelName: string, rendererName: string) {
         const el = document.getElementById("container");
         if (el === null) {
             throw new Error("Could not find container element in HTML.");
         }
         this.containerElement = el;
 
+        this.levelName = levelName;
+        this.rendererName = rendererName;
 
-        this.renderGraph = new RenderGraph();
+        this.renderGraph = new RenderGraph(this.levelName, this.rendererName);
         this.containerElement.appendChild(this.renderGraph.getDOMElement());
 
         window.addEventListener("resize", (e) => this.onWindowResize(e));

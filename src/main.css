@@ -36,18 +36,28 @@ body {
     top: calc(max(1vw, 1vh));
 	left: calc(max(1vw, 1vh));
     font-size: calc(max(12px, (1.5vw + 1.5vh) / 2));
-    text-shadow: 0px 0px 3px #000000;
-    color: #cccccc;
+    text-shadow: 0px 0px 1px #000000;
+    color: #a7a7a7;
+	background-color: rgba(255, 255, 255, 0.3);
+	padding: calc(max(0.5vw, 0.5vh));
 }
 
 #fps {
-    color: #80ff80;
+    color: #4a824a;
 }
 
 #fct {
-    color: #50c050;
+    color: #1d9b1d;
 }
 
 #res {
-	color: #5088d0;
+	color: #1f569f;
+}
+
+#msg {
+	color: #9f1f1f;
+}
+
+#sdf {
+	color: #c97507;
 }

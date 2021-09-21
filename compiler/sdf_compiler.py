@@ -34,8 +34,9 @@ class Node:
         while current is not None:
             self_check = current.get_symbol_from_own_table(symbol)
             if self_check is not None:
-                return self_check
+                return { "type": self_check, "node": current }
             current = current.parent
+
         return None
 
     def gather_symbols(self):
@@ -154,12 +155,14 @@ class LevelContainer(ShaderContainer):
             return super().emit(language, indent)
         
         body = []
-        body.append("import * as THREE from \"three\";")
         body.append("import * as RT from \"../shader_runtime\";")
         body.append("")
+        body.append("export class Level {")
 
         for c in self.children:
-            body.append(c.emit(language))
+            body.append(c.emit(language, indent=1))
+        
+        body.append("}")
 
         return '\n'.join(body);
 
@@ -202,16 +205,28 @@ class FunctionDeclaration(Node):
         self.parameters.gather_symbols()
         self.block.gather_symbols()
     
+    def get_clone_statements(self, indent):
+        statements = []
+        for p in self.parameters.children:
+            type_name = p.left.emit("glsl")
+            variable = p.right.emit("glsl")
+            if type_name in TS_TYPES and TS_TYPES[type_name] == "number[]":
+                statements.append(f"{margin(indent)}{variable} = ({variable}).slice();\n")
+            
+        return statements
+        
+
+    
     def emit(self, language, indent=0):
         a = self.return_type.emit(language)
         b = self.identifier.emit(language)
         c = self.parameters.emit(language)
-        d = self.block.emit(language)
+        d = self.block.emit(language, indent)
 
         if language == "glsl":
-            return f"{a} {b}({c}) {d}"
+            return f"{margin(indent)}{a} {b}({c}) {d}"
         else:
-            return f"function {b}({c}): {a} {d}"
+            return f"{margin(indent)}{b}({c}): {a} {d}"
 
 class Parameters(Node):
     def __init__(self, children):
@@ -230,9 +245,14 @@ class Parameter(BinaryOperation):
     def gather_symbols(self):
         type_name = self.left.emit("glsl")
         if type_name not in REWRITE_TYPES:
-            raise "unknown parameter type ({type_name})"
+            raise TypeError("unknown parameter type ({type_name})")
 
-        self.declare_symbol(
+        if not isinstance(self.parent, Parameters) or \
+            not isinstance(self.parent.parent, FunctionDeclaration) or \
+            not isinstance(self.parent.parent.block, Block):
+                raise Exception("internal error: unexpected ast structure around parameter")
+
+        self.parent.parent.block.declare_symbol(
             self.right.emit("glsl"),
             REWRITE_TYPES[type_name]
         )
@@ -292,13 +312,21 @@ class VariableDeclaration(Node):
         
         if language == "glsl":
             e = "" if self.initializer is None else " " + self.initializer.emit(language)
+            if "uniform" in a:
+                e = ""
+
             return f"{a}{b} {c}{d}{e}"
-        elif self.initializer is None:
-            return f"let {c}: {b}{d}"
         else:
-            generator = self.initializer.emit(language)
-            output_name = generator.get_single_output()
-            return [generator, f"let {c}: {b}{d} = {output_name}"]
+            prefix = "let "
+            if "uniform" in a:
+                prefix = ""
+            
+            if self.initializer is None:
+                return f"{prefix}{c}: {b}{d}"
+            else:
+                generator = self.initializer.emit(language)
+                output_name = generator.get_single_output()
+                return [generator, f"{prefix}{c}: {b}{d} = {output_name}"]
 
 
 class Qualifiers(Node):
@@ -346,7 +374,15 @@ class Block(Node):
     
     def emit(self, language, indent=0):
         fn = lambda x: x.emit(language, indent + 1)
-        return f"{{\n{''.join(map(fn, self.statements))}{margin(indent)}}}\n"
+        if language == 'glsl':
+            s = map(fn, self.statements)
+        else:
+            s = []
+            if isinstance(self.parent, FunctionDeclaration):
+                s.extend(self.parent.get_clone_statements(indent + 1))
+            s.extend(map(fn, self.statements))
+        
+        return f"{{\n{''.join(s)}{margin(indent)}}}\n"
 
 class ExpressionStatement(Node):
     def __init__(self, expression):
@@ -650,7 +686,7 @@ class ManyOperations(Node):
             dt_right = right.get_single_output().data_type
 
             current = eg.n_binary(
-                lambda a,b: f"{a}{stage[1]}{b}",
+                lambda a,b,o=stage[1]: f"{a}{o}{b}",
                 dt_left, dt_right, self.eg_result_type(stage[1]))
 
             left.send(None, current, "left")
@@ -671,7 +707,7 @@ class PrefixOperation(UnaryOperation):
     def emit(self, language, indent=0):
         return f"{self.operation}{self.value.emit(language)}"
 
-    def eg_formatter(self): return lambda v: f"{self.operation}{v}"
+    def eg_formatter(self): return lambda v,o=self.operation: f"{o}{v}"
 
     def eg_result_type(self, input_type): 
         if self.operation == "!":
@@ -837,11 +873,14 @@ class FunctionCall(BinaryOperation):
         
 
     def eg_actual_function_call(self, name, arguments):
-        data_type = self.get_symbol(self.left.emit("glsl"))
+        symbol = self.get_symbol(self.left.emit("glsl"))
+        data_type = symbol["type"]
+        prefix = "this." if isinstance(symbol["node"], ShaderContainer) else ""
+
         if data_type is None:
             raise Exception(f"function {self.left} not found")
 
-        current = eg.n_call(name, \
+        current = eg.n_call(prefix + name, \
                 list(map(lambda a: a.get_single_output().data_type, arguments)), \
                 data_type, \
                 eg.f_call)
@@ -895,10 +934,13 @@ class Identifier(UnaryOperation):
         return self.value
 
     def expression_graph(self):
-        data_type = self.get_symbol(self.value)
+        symbol = self.get_symbol(self.value)
+        data_type = symbol["type"]
+        prefix = "this." if isinstance(symbol["node"], ShaderContainer) else ""
+
         if data_type is None:
             raise Exception(f"identifier {self.value} not found")
-        return eg.n_identifier(self.value, data_type)
+        return eg.n_identifier(prefix + self.value, data_type)
 
 class LiteralFloat(UnaryOperation):
     def emit(self, language, indent=0):
@@ -1027,8 +1069,10 @@ def identify_source_files():
 parser = make_parser()
 
 with open("./src/built/index.ts", "w") as index:
+    index.write("import { NativeLevel } from \"../shader_runtime\";\n")
     index.write("let levels: Map<string, string[]> = new Map();\n")
-    index.write("let renderers: Map<string, string[]> = new Map();\n\n")
+    index.write("let renderers: Map<string, string[]> = new Map();\n")
+    index.write("let natives: Map<string, any> = new Map();\n\n")
 
     for file in identify_source_files():
         text = read_file(file)
@@ -1048,7 +1092,7 @@ with open("./src/built/index.ts", "w") as index:
                     handle.write(f"export const level_{id} = [`\n{top}\n`, `\n{body}\n`];")
 
                 index.write(f"import {{ level_{id} }} from \"./{output_file}\";\n")
-                index.write(f"levels.set(\"{id}\", level_{id});\n")
+                index.write(f"levels.set(\"{id}\", level_{id});\n\n")
 
                 print(f"Level TS {id}")
                 code = tree.level.emit("ts")
@@ -1058,7 +1102,8 @@ with open("./src/built/index.ts", "w") as index:
                 with open(output_path, "w") as handle:
                     handle.write(f"{code}\n")
 
-
+                index.write(f"import {{ Level as SDF_{id} }} from \"./{output_file}\";\n")
+                index.write(f"natives.set(\"{id}\", new SDF_{id}());\n\n")
 
 
             if tree.renderer is not None:
@@ -1071,11 +1116,12 @@ with open("./src/built/index.ts", "w") as index:
                     handle.write(f"export const renderer_{id} = [`\n{top}\n`, `\n{body}\n`];")
 
                 index.write(f"import {{ renderer_{id} }} from \"./{output_file}\";\n")
-                index.write(f"renderers.set(\"{id}\", renderer_{id});\n")
+                index.write(f"renderers.set(\"{id}\", renderer_{id});\n\n")
     
     index.write("\nconst BUILT = {\n")
     index.write("    levels: levels,\n")
     index.write("    renderers: renderers,\n")
+    index.write("    natives: natives,\n")
     index.write("};\n");
     index.write("export default BUILT;\n")
     

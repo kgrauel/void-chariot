@@ -21,7 +21,7 @@ export default class RenderGraph {
     upscalePass: PassShaderQuad;
 
 
-    constructor() {
+    constructor(levelName: string, rendererName: string) {
         this.lrSize = [];
         this.hrSize = [];
         this.pixelCountTarget = 100000;
@@ -30,7 +30,7 @@ export default class RenderGraph {
         this.renderer = new THREE.WebGLRenderer();
         this.renderer.outputEncoding = THREE.sRGBEncoding;
 
-        this.sdfPass = new PassShaderQuad(true, createSDFShader("01", "ao"));
+        this.sdfPass = new PassShaderQuad(true, createSDFShader(levelName, rendererName));
         this.ditherPass = new PassShaderQuad(true, createDitherShader());
         this.upscalePass = new PassShaderQuad(false, createUpscaleShader());
     
