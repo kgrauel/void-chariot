@@ -7,6 +7,18 @@ level {
     float opSubtraction( float d1, float d2 ) { return max(-d1,d2); }
     float opIntersection( float d1, float d2 ) { return max(d1,d2); }
 
+    float opSmoothUnion( float d1, float d2, float k ) {
+        float h = clamp( 0.5 + 0.5*(d2-d1)/k, 0.0, 1.0 );
+        return mix( d2, d1, h ) - k*h*(1.0-h); }
+
+    float opSmoothSubtraction( float d1, float d2, float k ) {
+        float h = clamp( 0.5 - 0.5*(d2+d1)/k, 0.0, 1.0 );
+        return mix( d2, -d1, h ) + k*h*(1.0-h); }
+
+    float opSmoothIntersection( float d1, float d2, float k ) {
+        float h = clamp( 0.5 - 0.5*(d2-d1)/k, 0.0, 1.0 );
+        return mix( d2, d1, h ) + k*h*(1.0-h); }
+
     float sdSphere( vec3 p, float s )
     {
         return length(p)-s;
@@ -43,8 +55,11 @@ level {
         v = min(v, sdCappedTorus(p, vec2(sin(an), cos(an)), 0.5, 0.2));
         v = min(v, sdBoxFrame(p - vec3(0.0, 0.45, 0.0), vec3(0.2, 0.3, 0.3), 0.03));
         
-        for (float th = 0; th < 6.28; th += 6.285 / 64) {
-            v = min(v, sdSphere(p - vec3(10 * cos(th), 0.0, 10 * sin(th)), 2.0 + 1.7 * cos(-iTime / 6 + th * 3)));
+        for (float th = 0; th < 6.28; th += 6.285 / 32) {
+            v = opSmoothUnion(
+                v,
+                sdSphere(p - vec3(10 * cos(th), 0.0, 10 * sin(th)), 2.0 + 1.7 * cos(-iTime / 6 + th * 3)),
+                0.5);
         }
 
         v = opSubtraction(sdSphere(p - vec3(10 * cos(iTime * 0.2), 3.0, 10 * sin(iTime * 0.2)), 6.0), v);
