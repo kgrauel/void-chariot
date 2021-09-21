@@ -31,13 +31,13 @@ ${renderer_code[1]}
             camPos: { value: [1, 0.4, 2] },
             lookAt: { value: [0, 0, 0] },
             focalLength: { value: 1.0 },
-            farPlaneDistance: { value: 30.0 },
-            maxIterations: { value: 250.0 },
+            farPlaneDistance: { value: 100.0 },
+            maxIterations: { value: 100.0 },
             directionTowardSun: { value: [1, 1, 1] },
             sunColor: { value: [0.7, 0.7, 0.7] },
-            aoIterations: { value: 13 },
-            aoDistance: { value: 0.01 },
-            aoPower: { value: 1.2 },
+            aoIterations: { value: 6 },
+            aoDistance: { value: 0.03 },
+            aoPower: { value: 1.5 }
         },
 
         vertexShader: `

@@ -24,7 +24,7 @@ export default class RenderGraph {
     constructor(levelName: string, rendererName: string) {
         this.lrSize = [];
         this.hrSize = [];
-        this.pixelCountTarget = 100000;
+        this.pixelCountTarget = 30000;
 
         // Construct the graph, terminal nodes first
         this.renderer = new THREE.WebGLRenderer();

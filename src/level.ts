@@ -50,8 +50,8 @@ export default class Level {
         this.cameraPitch = 0;
         this.cameraMoveSpeed = 5.0;
         this.cameraRotateSpeed = 0.003;
-        this.cameraAirFriction = 1.0;
-        this.cameraDragCoefficient = 0.05;
+        this.cameraAirFriction = 0.7;
+        this.cameraDragCoefficient = 0.06;
         this.cameraRadius = 0.3;
     }
 
@@ -143,29 +143,36 @@ vec3 approximateNormal(vec3 pos) {
             this.cameraPitch = Math.min(1.5, Math.max(-1.5, this.cameraPitch));
         }
         
-        this.nativeLevel.iTime = APP.timer.getTotalElapsed();
-        let sdf = this.nativeLevel.sdf(this.cameraPosition.toArray()) as number;
-        document.getElementById("sdf")!.innerText = `${sdf}`;
+        let steps = Math.floor(delta / 0.005) + 1;
+        let timePerStep = delta / steps;
+        let sdf;
 
-        let normal = this.approximateNormal(this.cameraPosition);
-        console.log(normal);
-
-        let speed = this.cameraVelocity.length();
-        let dragAcceleration = this.cameraVelocity.clone().normalize()
+        for (let step = 0; step < steps; step++) {
+            this.nativeLevel.iTime = APP.timer.getTotalElapsed() + step * timePerStep;
+            sdf = this.nativeLevel.sdf(this.cameraPosition.toArray()) as number;
+            
+            let normal = this.approximateNormal(this.cameraPosition);
+            //console.log(normal);
+            
+            let speed = this.cameraVelocity.length();
+            let dragAcceleration = this.cameraVelocity.clone().normalize()
             .multiplyScalar(-this.cameraDragCoefficient * speed * speed - this.cameraAirFriction);
-        let playerAcceleration = this.getRequestedMoveDirection()
+            let playerAcceleration = this.getRequestedMoveDirection()
             .multiplyScalar(this.cameraMoveSpeed);
-        let normalAcceleration = normal.clone().multiplyScalar(
-            sdf < this.cameraRadius ? 5.0 : 0.0);
-        let gravityAcceleration = new THREE.Vector3(0, -2.5, 0);
-        let totalAcceleration = dragAcceleration.clone()
-            .add(playerAcceleration).add(normalAcceleration).add(gravityAcceleration);
+            let normalAcceleration = normal.clone().multiplyScalar(
+                sdf < this.cameraRadius ? 5.0 : 0.0);
+            let gravityAcceleration = new THREE.Vector3(0, -2.5, 0);
+            let totalAcceleration = dragAcceleration.clone()
+                .add(playerAcceleration).add(normalAcceleration).add(gravityAcceleration);
+            
+            this.cameraVelocity.addScaledVector(totalAcceleration, timePerStep);
+            // if (playerAcceleration.length() < 0.05 && this.cameraVelocity.length() < 0.02) {
+            //     this.cameraVelocity.set(0, 0, 0);
+            // }
+            this.cameraPosition.addScaledVector(this.cameraVelocity, timePerStep);
+        }
 
-        this.cameraVelocity.addScaledVector(totalAcceleration, delta);
-        // if (playerAcceleration.length() < 0.05 && this.cameraVelocity.length() < 0.02) {
-        //     this.cameraVelocity.set(0, 0, 0);
-        // }
-        this.cameraPosition.addScaledVector(this.cameraVelocity, delta);
+        document.getElementById("sdf")!.innerText = `${sdf}`;
     }
 
 }
