@@ -35,6 +35,9 @@ export default class RenderGraph {
         this.upscalePass = new PassShaderQuad(false, createUpscaleShader());
     
         this.updateDimensions();
+
+        let compileTime = this.compileShaders();
+        console.log(`Compiled in ${compileTime} seconds.`);
     }
 
     getDOMElement(): any {
@@ -71,6 +74,14 @@ export default class RenderGraph {
 
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.setSize(this.hrSize[0], this.hrSize[1]);
+    }
+
+    compileShaders() {
+        let start = performance.now();
+        this.sdfPass.compileShaders(this.renderer);
+        this.sdfPass.compileShaders(this.renderer);
+        let elapsed = performance.now() - start;
+        return elapsed / 1000;
     }
 
     render() {

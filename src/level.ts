@@ -1,14 +1,28 @@
 import * as THREE from "three";
 import { APP } from "./app";
 import BUILT from "./built";
+import { level_01 } from "./built/01.level";
 import { NativeLevel } from "./shader_runtime";
+
+const NORMAL_DIRECTIONS = [
+    new THREE.Vector3(0.5773, -0.5773, -0.5773),
+    new THREE.Vector3(-0.5773, -0.5773, 0.5773),
+    new THREE.Vector3(-0.5773, 0.5773, -0.5773),
+    new THREE.Vector3(0.5773, 0.5773, 0.5773)
+]
 
 export default class Level {
     cameraPosition: THREE.Vector3;
+    cameraVelocity: THREE.Vector3;
+
     cameraYaw: number;
     cameraPitch: number;
+
     cameraMoveSpeed: number;
     cameraRotateSpeed: number;
+    cameraAirFriction: number;
+    cameraDragCoefficient: number;
+    cameraRadius: number;
 
     levelName: string;
     nativeLevel: any;
@@ -31,10 +45,14 @@ export default class Level {
         console.log(`total ${total}, elapsed ${elapsed}`)
 
         this.cameraPosition = new THREE.Vector3(0, 1, 2);
+        this.cameraVelocity = new THREE.Vector3();
         this.cameraYaw = 0;
         this.cameraPitch = 0;
-        this.cameraMoveSpeed = 2.0;
+        this.cameraMoveSpeed = 5.0;
         this.cameraRotateSpeed = 0.003;
+        this.cameraAirFriction = 1.0;
+        this.cameraDragCoefficient = 0.05;
+        this.cameraRadius = 0.3;
     }
 
     getCameraForward(): THREE.Vector3 {
@@ -49,33 +67,70 @@ export default class Level {
         return this.getCameraForward().clone().cross(new THREE.Vector3(0, 1, 0));
     }
 
-    doPhysics(delta: number) {
-        this.nativeLevel.iTime = APP.timer.getTotalElapsed();
-        document.getElementById("sdf")!.innerText = `${this.nativeLevel.sdf(this.cameraPosition.toArray())}`;
+    getRequestedMoveDirection(): THREE.Vector3 {
+        let request = new THREE.Vector3();
+
+        let f = this.getCameraForward();
+        f.setY(0);
+        f.normalize();
+
+        let r = this.getCameraRight();
+        r.setY(0);
+        r.normalize();
 
         if (APP.pressedKeys.has("w")) {
-            this.cameraPosition.addScaledVector(this.getCameraForward(), delta * this.cameraMoveSpeed);
+            request.addScaledVector(f, 1);
         }
 
         if (APP.pressedKeys.has("s")) {
-            this.cameraPosition.addScaledVector(this.getCameraForward(), -delta * this.cameraMoveSpeed);
+            request.addScaledVector(f, -1);
         }
 
         if (APP.pressedKeys.has("a")) {
-            this.cameraPosition.addScaledVector(this.getCameraRight(), -delta * this.cameraMoveSpeed);
+            request.addScaledVector(r, -1);
         }
 
         if (APP.pressedKeys.has("d")) {
-            this.cameraPosition.addScaledVector(this.getCameraRight(), delta * this.cameraMoveSpeed);
+            request.addScaledVector(r, 1);
         }
 
-        if (APP.pressedKeys.has("e")) {
-            this.cameraPosition.addScaledVector(new THREE.Vector3(0, 1, 0), delta * this.cameraMoveSpeed);
+        if (APP.pressedKeys.has(" ")) {
+            request.addScaledVector(new THREE.Vector3(0, 1, 0), 1);
         }
 
-        if (APP.pressedKeys.has("e")) {
-            this.cameraPosition.addScaledVector(new THREE.Vector3(0, 1, 0), -delta * this.cameraMoveSpeed);
+        if (request.lengthSq() <= 0.01) {
+            return request;
+        } else {
+            return request.normalize();
         }
+    }
+
+/*
+vec3 approximateNormal(vec3 pos) {
+        vec2 e = vec2(0.5773, -0.5773);
+        return normalize(
+            e.xyy * sdf(pos + e.xyy * 0.005) +
+            e.yyx * sdf(pos + e.yyx * 0.005) + 
+            e.yxy * sdf(pos + e.yxy * 0.005) + 
+            e.xxx * sdf(pos + e.xxx * 0.005)
+        );
+    }
+*/
+    
+    approximateNormal(p: THREE.Vector3): THREE.Vector3 {
+        let result = new THREE.Vector3(0, 0, 0);
+        
+        for (const dir of NORMAL_DIRECTIONS) {
+            const pos = this.cameraPosition.clone().addScaledVector(dir, 0.005).toArray();
+            const sdf = this.nativeLevel.sdf(pos);
+            result.addScaledVector(dir, sdf);
+        }
+
+        return result.normalize();
+    }
+
+    doPhysics(delta: number) {
+        delta = Math.min(0.1, delta);
 
         if (APP.pressedMouseButtons.has(0) && APP.dragDeltaThisFrame !== null) {
             let [yaw, pitch] = APP.dragDeltaThisFrame;
@@ -87,6 +142,30 @@ export default class Level {
             
             this.cameraPitch = Math.min(1.5, Math.max(-1.5, this.cameraPitch));
         }
+        
+        this.nativeLevel.iTime = APP.timer.getTotalElapsed();
+        let sdf = this.nativeLevel.sdf(this.cameraPosition.toArray()) as number;
+        document.getElementById("sdf")!.innerText = `${sdf}`;
+
+        let normal = this.approximateNormal(this.cameraPosition);
+        console.log(normal);
+
+        let speed = this.cameraVelocity.length();
+        let dragAcceleration = this.cameraVelocity.clone().normalize()
+            .multiplyScalar(-this.cameraDragCoefficient * speed * speed - this.cameraAirFriction);
+        let playerAcceleration = this.getRequestedMoveDirection()
+            .multiplyScalar(this.cameraMoveSpeed);
+        let normalAcceleration = normal.clone().multiplyScalar(
+            sdf < this.cameraRadius ? 5.0 : 0.0);
+        let gravityAcceleration = new THREE.Vector3(0, -2.5, 0);
+        let totalAcceleration = dragAcceleration.clone()
+            .add(playerAcceleration).add(normalAcceleration).add(gravityAcceleration);
+
+        this.cameraVelocity.addScaledVector(totalAcceleration, delta);
+        // if (playerAcceleration.length() < 0.05 && this.cameraVelocity.length() < 0.02) {
+        //     this.cameraVelocity.set(0, 0, 0);
+        // }
+        this.cameraPosition.addScaledVector(this.cameraVelocity, delta);
     }
 
 }

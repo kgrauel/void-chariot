@@ -25,6 +25,10 @@ export default abstract class PassAbstract {
         return this.outputTarget.texture;
     }
 
+    compileShaders(renderer: THREE.WebGLRenderer) {
+        // do nothing
+    }
+
     updateRenderTarget(targetDimensions: number[] | null): any {
         if (this.makeOwnRenderTarget) {
             if (targetDimensions === null || targetDimensions.length !== 2) {

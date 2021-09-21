@@ -30,7 +30,7 @@ ${renderer_code[1]}
             iFrame: { value: 0 },
             camPos: { value: [1, 0.4, 2] },
             lookAt: { value: [0, 0, 0] },
-            focalLength: { value: 1.5 },
+            focalLength: { value: 1.0 },
             farPlaneDistance: { value: 30.0 },
             maxIterations: { value: 250.0 },
             directionTowardSun: { value: [1, 1, 1] },

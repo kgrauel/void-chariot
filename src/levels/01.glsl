@@ -37,16 +37,29 @@ level {
         v = opSubtraction(sdSphere(abs(p) - vec3(1.0, 0.2, 1.0), 0.5), v);
         v = min(v, sdCappedTorus(p, vec2(sin(an), cos(an)), 0.5, 0.2));
         v = min(v, sdBoxFrame(p - vec3(0.0, 0.45, 0.0), vec3(0.2, 0.3, 0.3), 0.03));
-        v = opIntersection(v, abs(p.x) * sin(iTime / 3) + abs(p.z) * cos(iTime / 3) - 0.3);
+        //v = opIntersection(v, abs(p.x) * sin(iTime / 3) + abs(p.z) * cos(iTime / 3) - 0.3);
         return v;
     }
 
     vec3 getPigment(vec3 p) {
-        vec3 c = vec3(0.9);
-        float an = 2.5 * (0.5 + 0.5 * sin(iTime * 1.1 + 3.0));
+        vec3 c = vec3(0.9, 0.85, 0.87);
         float far = length(p.xz);
-        if (p.y < -0.295 && far < 2.0) {
-            c = vec3(0.7);
+
+        if (far < 20) {
+            if (mod(p.x, 2) < 1) {
+                c *= vec3(1.0, 0.87, 0.8);
+            }
+            if (mod(p.z, 2) < 1) {
+                c *= vec3(0.84, 0.88, 1.02);
+            }
+        }
+        else {
+            c *= 0.5;
+        }
+        float an = 2.5 * (0.5 + 0.5 * sin(iTime * 1.1 + 3.0));
+
+        if (p.y < -0.295 && far < 2.1) {
+            c = vec3(0.6);
         }
         if (p.y < -0.305) {
             c = vec3(0.5, 0.35, 0.25) * 2.0 / (2.0 + floor(-p.y));

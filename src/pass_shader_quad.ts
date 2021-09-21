@@ -38,6 +38,10 @@ export default class PassShaderQuad extends PassAbstract {
         this.material.uniforms[variableName] = { value: value };
     }
 
+    compileShaders(renderer: THREE.WebGLRenderer) {
+        renderer.compile(this.scene, this.camera);
+    }
+
     render(
         renderer: THREE.WebGLRenderer,
         previousPass: THREE.Texture | null,

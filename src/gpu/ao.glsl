@@ -70,12 +70,24 @@ renderer {
         float steps = -0.001; // this bias prevents rounding error
         vec3 p = camPos;
         float distance = 50.0;
-
+        vec4 interiorColor = vec4(0.0);
+        float hasBeenPositive = 0.0;
+        float interiorStep = 0.01;
         // Raymarch.
         while (t <= farPlaneDistance && steps <= maxIterations) {
             distance = sdf(p);
-            if (distance < 0.001) {
-                break;
+
+            if (distance > 0.001) {
+                if (hasBeenPositive == 0) {
+                   interiorColor.a -= distance;
+                }
+                hasBeenPositive = 1;
+            } else {
+                if (hasBeenPositive > 0 || interiorColor.a >= 1.0) {
+                    break;
+                }
+                distance = interiorStep;
+                interiorColor += vec4(getPigment(p) * distance, distance);
             }
 
             p += distance * ray;
@@ -101,8 +113,9 @@ renderer {
         } else {
             color = sky(ray);
         }
-        
 
+        interiorColor.a = pow(clamp(interiorColor.a, 0, 1), 0.2);
+        color = mix(color, interiorColor.rgb * (0.8 - 0.2 * interiorColor.a), interiorColor.a);
 
         color = pow(color, vec3(0.45));
         gl_FragColor = vec4(color, 1.0);
