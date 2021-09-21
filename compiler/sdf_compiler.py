@@ -6,9 +6,9 @@ from os import listdir
 from os.path import isfile, join, basename
 import pprint as pp
 from common import * 
+import expression_graph as eg
 
-def margin(level):
-    return "  " * level
+
 
 
 
@@ -21,7 +21,7 @@ def link(me, child):
 
 class Node:
     def emit(self, language, indent=0):
-        raise "unimplemented"
+        raise NotImplementedError()
 
     def __repr__(self):
         return self.emit("glsl")
@@ -36,12 +36,10 @@ class Node:
             if self_check is not None:
                 return self_check
             current = current.parent
-
         return None
 
     def gather_symbols(self):
         pass
-        #print(f"bounce {type(self).__name__}") 
 
     def register_symbol_in_own_table(self, name, type_information):
         return False
@@ -54,7 +52,10 @@ class Node:
                 return True
             current = current.parent
         
-        raise "could not declare symbol"
+        raise Exception("could not declare symbol")
+
+    def expression_graph(self):
+        raise NotImplementedError()
 
 
 
@@ -62,6 +63,19 @@ class UnaryOperation(Node):
     def __init__(self, value):
         link(self, value)
         self.value = value
+
+    def eg_formatter(self):
+        raise NotImplementedError()
+
+    def eg_result_type(self, input_type):
+        return input_type
+
+    def expression_graph(self):
+        value = self.value.expression_graph()
+        dt = value.get_single_output().data_type
+        current = eg.n_unary(self.eg_formatter(), dt, self.eg_result_type(dt))
+        value.send(None, current, "value")
+        return current
 
 class BinaryOperation(Node):
     def __init__(self, left, right, center=None):
@@ -115,7 +129,6 @@ class ShaderContainer(Node):
             return None
 
     def register_symbol_in_own_table(self, name, type_information):
-        #print(f"registered {name}")
         self.table[name] = type_information
         return True
 
@@ -157,8 +170,8 @@ class PrimitiveType(UnaryOperation):
     def emit(self, language, indent=0):
         primitive = str(self.value)
         if language == "ts":
-            if primitive in REWRITE_TYPES:
-                return REWRITE_TYPES[primitive]
+            if primitive in TS_TYPES:
+                return TS_TYPES[primitive]
         return primitive
 
 class ArrayType(BinaryOperation):
@@ -276,12 +289,17 @@ class VariableDeclaration(Node):
         b = self.data_type.emit(language)
         c = self.identifier.emit(language)
         d = "" if self.array_modifier is None else self.array_modifier.emit(language)
-        e = "" if self.initializer is None else " " + self.initializer.emit(language)
-
+        
         if language == "glsl":
+            e = "" if self.initializer is None else " " + self.initializer.emit(language)
             return f"{a}{b} {c}{d}{e}"
+        elif self.initializer is None:
+            return f"let {c}: {b}{d}"
         else:
-            return f"let {c}: {b}{d}{e}"
+            generator = self.initializer.emit(language)
+            output_name = generator.get_single_output()
+            return [generator, f"let {c}: {b}{d} = {output_name}"]
+
 
 class Qualifiers(Node):
     def __init__(self, children):
@@ -300,7 +318,11 @@ class ArrayModifier(UnaryOperation):
         
 class Initializer(UnaryOperation):
     def emit(self, language, indent=0):
-        return f"= {self.value.emit(language)}"
+        if language == "glsl":
+            return f"= {self.value.emit(language)}"
+        else:
+            return self.value.emit(language)  # the CodeGenerator for the expression
+            
 
 class Block(Node):
     def __init__(self, statements):
@@ -319,7 +341,6 @@ class Block(Node):
             return None
 
     def register_symbol_in_own_table(self, name, type_information):
-        #print(f"registered {name}")
         self.table[name] = type_information
         return True
     
@@ -336,33 +357,82 @@ class ExpressionStatement(Node):
         self.expression.gather_symbols()
     
     def emit(self, language, indent=0):
-        return f"{margin(indent)}{self.expression.emit(language, 0)};\n"
+        if self.expression is None:
+            return ""
+        
+        expression = self.expression.emit(language, 0)
+
+        if isinstance(expression, str):
+            return f"{margin(indent)}{expression};\n"
+        elif isinstance(expression, list): # [generator, last line]
+            generator = expression[0]
+            return (f"{generator.all_lines(indent)}{margin(indent)}{expression[1]};\n")
+        elif isinstance(expression, eg.CodeGenerator):
+            return expression.all_lines(indent)
+        else:
+            raise TypeError(f"unknown type {type(expression).__name__} as expression return")
+            
 
 class IfStatement(Node):
-    def __init__(self, condition, if_true, if_false):
-        link(self, condition)
-        link(self, if_true)
-        link(self, if_false)
-        self.condition = condition
-        self.if_true = if_true
-        self.if_false = if_false
+    def __init__(self, children):
+        for c in children:
+            link(self, c)
+
+        self.branches = []
+        i = 0
+        has_else = False
+
+        while i < len(children):
+            if isinstance(children[i], Expression):
+                if i + 1 >= len(children):
+                    raise Exception("parser has returned malformed ast in if")
+                if has_else:
+                    raise Exception("if/else if after else")
+                self.branches.append(["if" if len(self.branches) == 0 else "else if", children[i], children[i + 1]])
+                i += 2
+            elif isinstance(children[i], Block):
+                if has_else:
+                    raise Exception("two else branches in a single if block")
+                self.branches.append(["else", None, children[i]])
+                has_else = True
+                i += 1
+            else:
+                print(children[i])
+                raise Exception("unknown if statement child")
     
     def gather_symbols(self):
-        self.if_true.gather_symbols()
-        if self.if_false is not None:
-            self.if_false.gather_symbols()
+        for b in self.branches:
+            for i in range(1, len(b)):
+                if b[i] is not None:
+                    b[i].gather_symbols()
 
     def emit(self, language, indent=0):
-        first, rest = (indent if isinstance(indent, list) else [indent, indent])
-        c = self.condition.emit(language, 0)
-        b = self.if_true.emit(language, rest)
-        if self.if_false is None:
-            return f"{margin(first)}if ({c}) {b}"
-        else:
-            e = self.if_false.emit(
-                language, 
-                indent=([0, indent] if isinstance(self.if_false, IfStatement) else rest))
-            return f"{margin(first)}if ({c}) {b}{margin(rest)}else {e}"
+        if language == "glsl":
+            condition = lambda b: ('' if b[1] is None else f" ({b[1].emit(language, 0)})")
+            return "".join([
+                f"{margin(indent)}{b[0]}{condition(b)} {b[2].emit(language, indent)}"
+                for b in self.branches
+            ])
+        else:   # TODO: guard against side effects in conditions, e.g. if (x = 5) { ... }
+            result = ""
+            for b in self.branches:
+                if b[1] is not None:
+                    generator = b[1].emit(language, 0)
+                    result += generator.all_lines(indent)
+                    b.append(generator.get_single_output())
+
+            condition = lambda b: ('' if b[1] is None else f" ({b[3]})")
+            result += "".join([
+                f"{margin(indent)}{b[0]}{condition(b)} {b[2].emit(language, indent)}"
+                for b in self.branches
+            ])
+            return result
+
+
+            
+
+
+        
 
 class WhileStatement(Node):
     def __init__(self, condition, body):
@@ -375,9 +445,24 @@ class WhileStatement(Node):
         self.body.gather_symbols()
     
     def emit(self, language, indent=0):
-        c = self.condition.emit(language, 0)
-        b = self.body.emit(language, indent)
-        return f"{margin(indent)}while ({c}) {b}"
+        if language == "glsl":
+            c = self.condition.emit(language, 0)
+            b = self.body.emit(language, indent)
+            return f"{margin(indent)}while ({c}) {b}"
+        else:
+            b = self.condition.emit(language, 0)
+            d = self.body.emit(language, indent + 1)
+
+            lines = f"{margin(indent)}while (true) {{\n"
+
+            if b is not None:
+                lines += b.all_lines(indent + 1)
+                lines += f"{margin(indent + 1)}if (!{b.get_single_output()}) break;\n"
+            
+            lines += f"{margin(indent+1)}{d}"
+            lines += f"{margin(indent)}}}\n"
+            
+            return lines
         
 class ForStatement(Node):
     def __init__(self, initializer, condition, increment, body):
@@ -395,11 +480,45 @@ class ForStatement(Node):
         self.body.gather_symbols()
     
     def emit(self, language, indent=0):
-        a = "" if isinstance(self.initializer, str) else self.initializer.emit(language, 0)
-        b = "" if isinstance(self.condition, str) else self.condition.emit(language, 0)
-        c = "" if isinstance(self.increment, str) else self.increment.emit(language, 0)
-        d = self.body.emit(language, indent)
-        return f"{margin(indent)}for ({a}; {b}; {c}) {d}"
+        
+
+        if language == "glsl":
+            a = "" if isinstance(self.initializer, str) else self.initializer.emit(language, 0)
+            b = "" if isinstance(self.condition, str) else self.condition.emit(language, 0)
+            c = "" if isinstance(self.increment, str) else self.increment.emit(language, 0)
+            d = self.body.emit(language, indent)
+
+            return f"{margin(indent)}for ({a}; {b}; {c}) {d}"
+        else:
+            a = None if isinstance(self.initializer, str) else self.initializer.emit(language, 0)
+            b = None if isinstance(self.condition, str) else self.condition.emit(language, 0)
+            c = None if isinstance(self.increment, str) else self.increment.emit(language, 0)
+            d = self.body.emit(language, indent + 1)
+
+            lines = ""
+
+            if a is not None:
+                if isinstance(a, list):
+                    generator = a[0]
+                    lines += generator.all_lines(indent)
+                    lines += f"{margin(indent)}{a[1]};\n"
+                else:
+                    lines += a.all_lines(indent)
+
+            lines += f"{margin(indent)}while (true) {{\n"
+
+            if b is not None:
+                lines += b.all_lines(indent + 1)
+                lines += f"{margin(indent + 1)}if (!{b.get_single_output()}) break;\n"
+            
+            lines += f"{margin(indent+1)}{d}"
+
+            if c is not None:
+                lines += c.all_lines(indent + 1)
+
+            lines += f"{margin(indent)}}}\n"
+            
+            return lines
 
 
 class SimpleStatement(Node):
@@ -415,19 +534,33 @@ class SimpleStatement(Node):
 
 class ReturnStatement(UnaryOperation):
     def emit(self, language, indent=0):
-        value = '' if self.value is None else ' ' + self.value.emit(language)
-        return f"{margin(indent)}return{value};\n"
+        if language == "glsl":
+            value = '' if self.value is None else f' {self.value.emit(language)}'
+            return f"{margin(indent)}return{value};\n"
+        else:
+            generator = self.value.emit(language)
+            return (f"{generator.all_lines(indent)}{margin(indent)}"
+                    f"return {generator.get_single_output()};\n")
+
+        
+
+
 
 class Expression(Node):
     def __init__(self, expression):
+        link(self, expression)
         self.expression = expression
 
     def emit(self, language, indent=0):
         if language == 'glsl':
             return self.expression.emit('glsl')
         else:
-            print("EXPRESSION GUARD")  # TODO
-            return "ASDASD"
+            terminal = self.expression.expression_graph()
+            generator = eg.CodeGenerator(terminal)
+            return generator
+
+    def expression_graph(self):
+        return self.expression.expression_graph()
 
 class Conditional(Node):
     def __init__(self, condition, if_true, if_false):
@@ -440,6 +573,20 @@ class Conditional(Node):
     
     def emit(self, language, indent=0):
         return f"({self.condition.emit(language)} ? {self.if_true.emit(language)} : {self.if_false.emit(language)})"
+
+    def expression_graph(self):
+        condition = self.condition.expression_graph()
+        if_true = self.if_true.expression_graph()
+        if_false = self.if_false.expression_graph()
+
+        current = eg.n_branch(if_true.get_single_output().data_type)
+
+        condition.send(None, current, "condition")
+        if_true.send(None, current, "if_true")
+        if_false.send(None, current, "if_false")
+
+        return current
+        
 
 class ManyOperations(Node):
     def __init__(self, sequence, operator=None):
@@ -455,6 +602,65 @@ class ManyOperations(Node):
         intersperse = " " if self.operator is None else f"{self.operator}"
         return f"{intersperse.join(map(render_fn, self.sequence))}"
 
+    def eg_result_type(self, op):
+        if op in ["<", ">", "<=", ">=", "==", "!=", "&&", "||"]:
+            return BooleanType()
+        return None
+
+    def left_associative(self, op):
+        if op in ["=", "*=", "/=", "%=", "+=", "-="]:
+            return False
+        return True
+
+    def eg_normalize_structure(self):
+        stages = []
+        if self.operator is None:
+            if self.left_associative(self.sequence[1]):
+                stages.append([self.sequence[0], self.sequence[1], self.sequence[2]])
+                for i in range(3, len(self.sequence), 2):
+                    stages.append([None, self.sequence[i], self.sequence[i + 1]])
+            else:
+                e = len(self.sequence) - 1
+                stages.append([self.sequence[e - 2], self.sequence[e - 1], self.sequence[e]])
+                for i in range(e - 3, -1, -2):
+                    stages.append([self.sequence[i - 1], self.sequence[i], None])
+        else:
+            op = self.operator.strip()
+            if self.left_associative(op):
+                stages.append([self.sequence[0], op, self.sequence[1]])
+                for i in range(2, len(self.sequence), 1):
+                    stages.append([None, op, self.sequence[i]])
+            else:
+                e = len(self.sequence) - 1
+                stages.append([self.sequence[e - 1], op, self.sequence[e]])
+                for i in range(e - 2, -1, -1):
+                    stages.append([self.sequence[i], op, None])
+
+        return stages
+
+    def expression_graph(self):
+        stages = self.eg_normalize_structure()
+        previous = None
+
+        for stage in stages:
+            left = (previous if stage[0] is None else stage[0].expression_graph())
+            right = (previous if stage[2] is None else stage[2].expression_graph())
+
+            dt_left = left.get_single_output().data_type
+            dt_right = right.get_single_output().data_type
+
+            current = eg.n_binary(
+                lambda a,b: f"{a}{stage[1]}{b}",
+                dt_left, dt_right, self.eg_result_type(stage[1]))
+
+            left.send(None, current, "left")
+            right.send(None, current, "right")
+            previous = current
+
+        return previous
+
+
+
 class PrefixOperation(UnaryOperation):
     def __init__(self, value, operation):
         link(self, value)
@@ -465,22 +671,27 @@ class PrefixOperation(UnaryOperation):
     def emit(self, language, indent=0):
         return f"{self.operation}{self.value.emit(language)}"
 
+    def eg_formatter(self): return lambda v: f"{self.operation}{v}"
 
-class Negation(UnaryOperation):
-    def emit(self, language, indent=0):
-        return f"-{self.value.emit(language)}"
+    def eg_result_type(self, input_type): 
+        if self.operation == "!":
+            return BooleanType()
+        else:
+            return input_type
 
-class LogicalNot(UnaryOperation):
-    def emit(self, language, indent=0):
-        return f"!{self.value.emit(language)}"
 
 class Increment(UnaryOperation):
     def emit(self, language, indent=0):
         return f"{self.value.emit(language)}++"
 
-class Decrement(UnaryOperation):
+    def eg_formatter(self): return lambda v: f"{v}++"
+
+class Decrement(Increment):
     def emit(self, language, indent=0):
         return f"{self.value.emit(language)}--"
+
+    def eg_formatter(self): return lambda v: f"{v}--"
+
 
 class Indexed(BinaryOperation):
     def emit(self, language, indent=0):
@@ -488,6 +699,11 @@ class Indexed(BinaryOperation):
             return f"{self.left.emit(language)}[int({self.right.emit(language)})]"
         else:
             return f"{self.left.emit(language)}[{self.right.emit(language)}]"
+
+    def expression_graph(self):
+        raise NotImplementedError()   # TODO arrays
+
+
 
 class FunctionCall(BinaryOperation):
     def emit(self, language, indent=0):
@@ -498,8 +714,142 @@ class FunctionCall(BinaryOperation):
         elif left in ["vec2", "vec3", "vec4"]:
             pass
         raise "todo"
+
+    def expression_graph(self):
+        fn = self.left.emit('glsl')
+        arguments = list(map(lambda x: x.expression_graph(), self.right))
+
+        if fn in REWRITE_TYPES:
+            return self.eg_constructor(REWRITE_TYPES[fn], arguments)
+        elif fn in REWRITE_CALLS:
+            return self.eg_library_function(REWRITE_CALLS[fn], arguments)
+        else:
+            return self.eg_actual_function_call(fn, arguments)
             
+    def eg_constructor(self, dt, arguments):
+        if dt == VoidType():
+            raise TypeError("cannot cast to void")
+        elif dt == IntegerType():
+            if len(arguments) != 1:
+                raise ValueError("int constructor requires exactly 1 argument")
+            dt_in = arguments[0].get_single_output().data_type
+            if dt_in.arity() != 1:
+                raise TypeError("int constructor requires scalar argument")
+            current = eg.n_call("Math.floor", [dt_in], dt)
+            arguments[0].send(None, current, "input_0")
+            return current
+        else:
+            if len(arguments) == 0:
+                raise ValueError(f"{dt} constructor requires at least one argument")
             
+            if len(arguments) == 1 and arguments[0].get_single_output().data_type.arity() == 1:
+                if isinstance(dt, VectorType):
+                    current = eg.n_reflow(
+                        [arguments[0].get_single_output().data_type],
+                        [dt],
+                        indices=[0 for i in range(dt.arity())])
+                    arguments[0].send(None, current, f"input_0")
+                    return current
+                elif isinstance(dt, MatrixType):
+                    raise NotImplementedError()
+            
+            current = eg.n_reflow(
+                list(map(lambda a: a.get_single_output().data_type, arguments)),
+                [dt])
+            for i in range(len(arguments)):
+                arguments[i].send(None, current, f"input_{i}")
+            return current
+
+
+
+    def eg_library_function(self, call_info, arguments):
+        function_name = call_info[0]
+        variety = call_info[1]
+
+        if variety == DISTRIBUTE or variety == ACCUMULATE:
+            dt_single = None
+            dt_vector = None
+
+            for a in arguments:
+                dt = a.get_single_output().data_type
+                if dt.arity() == 1:
+                    if dt_single is None:
+                        dt_single = dt
+                    elif dt_single != dt:
+                        raise TypeError(f"inconsistent scalar types in call to {function_name}")
+                elif isinstance(dt, VectorType):
+                    if dt_vector is None:
+                        dt_vector = dt
+                    elif dt_vector != dt:
+                        raise TypeError(f"inconsistent vector types in call to {function_name}")
+            
+            if dt_single is not None and dt_vector is not None and \
+                dt_single.primitive_type() != dt_vector.primitive_type():
+                    raise TypeError(f"incompatible primitive types in call to {function_name}")
+
+            dt_output = dt_vector if dt_vector is not None else dt_single
+            if variety == ACCUMULATE:
+                dt_output = dt_output.primitive_type()
+
+            current = eg.n_call(function_name, \
+                list(map(lambda a: a.get_single_output().data_type, arguments)), \
+                dt_output, \
+                eg.f_call_distribute if variety == DISTRIBUTE else eg.f_call)
+            
+            for i, a in enumerate(arguments):
+                a.send(None, current, f"input_{i}")
+
+            return current
+        else:
+            if variety == VEC3_VEC3:
+                need = 2
+                bad_types = arguments[0].get_single_output().data_type.arity() != 3 or \
+                    arguments[1].get_single_output().data_type.arity() != 3
+                out_type = VectorType(FloatType(), 3)
+            elif variety == VEC_VEC_MAT:
+                need = 2
+                bad_types = arguments[0].get_single_output().data_type.arity() != \
+                    arguments[1].get_single_output().data_type.arity() or \
+                    not isinstance(arguments[0].get_single_output().data_type, VectorType)
+                out_type = MatrixType(arguments[0].get_single_output().data_type.arity())
+            elif variety == MAT_MAT:
+                need = 1
+                bad_types = not isinstance(arguments[0].get_single_output().data_type, MatrixType)
+                out_type = arguments[0].get_single_output().data_type
+            else:
+                raise TypeError("unknown library function variety")
+            if len(arguments) != need:
+                raise ValueError(f"function {function_name} has wrong number of arguments")
+
+            if bad_types:
+                    raise ValueError(f"function {function_name} has incorrect argument type")
+
+            current = eg.n_call(function_name, \
+                list(map(lambda a: a.get_single_output().data_type, arguments)), \
+                out_type, \
+                eg.f_call)
+
+            for i, a in enumerate(arguments):
+                a.send(None, current, f"input_{i}")
+
+            return current
+        
+        
+
+    def eg_actual_function_call(self, name, arguments):
+        data_type = self.get_symbol(self.left.emit("glsl"))
+        if data_type is None:
+            raise Exception(f"function {self.left} not found")
+
+        current = eg.n_call(name, \
+                list(map(lambda a: a.get_single_output().data_type, arguments)), \
+                data_type, \
+                eg.f_call)
+
+        for i, a in enumerate(arguments):
+            a.send(None, current, f"input_{i}")
+
+        return current
 
 
 FIELDS = {
@@ -510,39 +860,45 @@ FIELDS = {
 
 class FieldSelection(BinaryOperation):
     def emit(self, language, indent=0):
-        if language == 'glsl':
-            
-            # location = self
-            # stack = []
-            # while location is not None:
-            #     stack.append(location)
-            #     location = location.parent
-            # print(" -> ".join(map(lambda x: f"{type(x).__name__} {x.get_symbol('p')}", stack)))
+        return f"{self.left.emit(language)}.{self.right.emit(language)}"
 
-            return f"{self.left.emit(language)}.{self.right.emit(language)}"
-        else:
-            source = self.left.emit(language)
-            if not isinstance(source, list):
-                raise "tried to select field from non vector"
-            field = self.right.emit(language)
-            items = []
-            for c in field:
-                if c in FIELDS:
-                    index = FIELDS[c]
-                    items.append(f"{source}[{index}]")
-                else:
-                    raise "unrecognized field letter"
-            return items
+    def expression_graph(self):
+        indices = []
+        for c in self.right.emit('glsl'):
+            if c not in FIELDS:
+                raise ValueError("swizzle contains unrecognized character {c}")
+            indices.append(FIELDS[c])
+        
+        if len(indices) < 1 or len(indices) > 4:
+            raise ValueError(f"swizzle contains invalid number of characters ({len(indices)})")
+
+        left = self.left.expression_graph()
+        current = eg.n_reflow(
+            [left.get_single_output().data_type],
+            [FloatType() if len(indices) == 1 else VectorType(FloatType(), len(indices))], 
+            indices=indices)
+
+        left.send(None, current, "input_0")
+        
+        return current
             
 
 class Group(UnaryOperation):
     def emit(self, language, indent=0):
         return f"({self.value.emit(language)})"
 
+    def expression_graph(self):
+        return self.value.expression_graph()
+
 class Identifier(UnaryOperation):
     def emit(self, language, indent=0):
-        #print(f"{self.value} -> {self.get_symbol(self.value)}")
         return self.value
+
+    def expression_graph(self):
+        data_type = self.get_symbol(self.value)
+        if data_type is None:
+            raise Exception(f"identifier {self.value} not found")
+        return eg.n_identifier(self.value, data_type)
 
 class LiteralFloat(UnaryOperation):
     def emit(self, language, indent=0):
@@ -551,6 +907,9 @@ class LiteralFloat(UnaryOperation):
             return s + ".0"
         else:
             return s
+
+    def expression_graph(self):
+        return eg.n_float(str(self.value))
 
 
 
@@ -585,7 +944,7 @@ class Intermediate(Transformer):
     def block(self, c): return Block(c)
     def expression_statement(self, c): return ExpressionStatement(c[0] if len(c) > 0 else None)
     def var_decl_stmt(self, c): return ExpressionStatement(c[0])
-    def if_statement(self, c): return IfStatement(c[0], c[1], c[2] if len(c) > 2 else None)
+    def if_statement(self, c): return IfStatement(c)
     def for_statement(self, c): return ForStatement(c[0], c[1], c[2], c[3])
     def fs_interior(self, c): return ""
     def while_statement(self, c): return WhileStatement(c[0], c[1])
@@ -691,13 +1050,14 @@ with open("./src/built/index.ts", "w") as index:
                 index.write(f"import {{ level_{id} }} from \"./{output_file}\";\n")
                 index.write(f"levels.set(\"{id}\", level_{id});\n")
 
-                # print(f"Level TS {id}")
-                # code = tree.level.emit("ts")
+                print(f"Level TS {id}")
+                code = tree.level.emit("ts")
 
-                # output_file = f"{id}.native"
-                # output_path = f"./src/built/{output_file}.ts"
-                # with open(output_path, "w") as handle:
-                #     handle.write(f"{code}\n")
+                output_file = f"{id}.native"
+                output_path = f"./src/built/{output_file}.ts"
+                with open(output_path, "w") as handle:
+                    handle.write(f"{code}\n")
+
 
 
 

@@ -43,10 +43,11 @@ initializer: "=" expression
 block: "{" statement+ "}"
 expression_statement: expression? ";"
 var_decl_stmt: var_declaration ";"
-if_statement: "if" "(" expression ")" statement ("else" statement)?
-for_statement: "for" "(" fs_interior ";" fs_interior ";" fs_interior ")" statement
+if_statement: "if" "(" expression ")" block ("else" ("if" "(" expression ")")? block)*
+for_statement: "for" "(" fs_interior ";" fs_interior_2 ";" fs_interior_2 ")" block
 ?fs_interior: | expression | var_declaration
-while_statement: "while" "(" expression ")" statement
+?fs_interior_2: | expression
+while_statement: "while" "(" expression ")" block
 continue_statement: "continue" ";"
 break_statement: "break" ";"
 return_statement: "return" expression? ";"

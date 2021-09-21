@@ -1,6 +1,10 @@
 from dataclasses import dataclass
 from typing import Annotated, Any, Dict
 
+def margin(level):
+    return "  " * level
+
+    
 @dataclass
 class VoidType:
     def arity(self): return 0
@@ -42,6 +46,7 @@ class MatrixType:
     def primitive_type(self): return FloatType()
 
 
+
 REWRITE_TYPES = {
     "void": VoidType(),
     "float": FloatType(),
@@ -52,6 +57,18 @@ REWRITE_TYPES = {
     "mat3": MatrixType(3),
     "mat4": MatrixType(4)
 }
+
+TS_TYPES = {
+    "void": "void",
+    "float": "number",
+    "int": "number",
+    "vec2": "number[]",
+    "vec3": "number[]",
+    "vec4": "number[]",
+    "mat3": "number[]",
+    "mat4": "number[]"
+}
+
 
 DISTRIBUTE = 0
 ACCUMULATE = 1
@@ -98,7 +115,7 @@ REWRITE_CALLS = {
     "distance": ["RT.length", ACCUMULATE],
     "dot": ["RT.dot", ACCUMULATE],
     "cross": ["RT.cross", VEC3_VEC3],
-    "normalize": ["RT.normalize", DISTRIBUTE],
+    "normalize": ["RT.normalize", ACCUMULATE],
     "outerProduct": ["RT.outerProduct", VEC_VEC_MAT],
     "transpose": ["RT.transpose", MAT_MAT],
     "determinant": ["RT.determinant", ACCUMULATE],

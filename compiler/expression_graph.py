@@ -23,11 +23,12 @@ class Attachment:
         self.attachments.append(target)
 
 class Node:
-    def __init__(self, formatter, state=None):
+    def __init__(self, formatter, state=None, substitutable=False):
         self.inputs = dict()
         self.outputs = dict()
         self.formatter = formatter
         self.state = state
+        self.substitutable = substitutable
 
     def _append(self, target_dictionary, name, dt):
         target_dictionary[name] = Attachment(name, dt, self)
@@ -41,6 +42,8 @@ class Node:
         return self
 
     def send(self, output_name, receiving_node, receiving_name):
+        if output_name is None:
+            output_name = self.get_single_output().name
         if output_name not in self.outputs:
             raise TypeError(f"output attachment {output_name} does not exist")
         if receiving_name not in receiving_node.inputs:
@@ -53,6 +56,12 @@ class Node:
 
         self.outputs[output_name].add_attachment(receiving_node.inputs[receiving_name])
         receiving_node.inputs[receiving_name].add_attachment(self.outputs[output_name])
+   
+    def get_single_output(self):
+        if len(self.outputs) != 1:
+            raise ValueError("context required exactly 1 output")
+        for _, v in self.outputs.items():
+            return v
 
 
 
@@ -65,8 +74,14 @@ class Node:
 def f_literal(n, inputs):
     return { "result": str(n.state["value"]) }
 
-def f_unary(n, inputs):
+def f_unary_s(n, inputs):
     return { "result": n.state["combiner"](inputs["value"]) }
+
+def f_unary_v(n, inputs):
+    values = map(lambda i: n.state["combiner"](f"{inputs['value']}[{i}]"), \
+        range(n.inputs["value"].data_type.arity()))
+
+    return { "result": f"[{','.join(values)}]" }
 
 def f_binary_ss(n, inputs):
     left = inputs["left"]
@@ -97,10 +112,28 @@ def f_branch(n, inputs):
 def f_call(n, inputs):
     parameters = []
     for ii in range(len(n.inputs)):
-        parameters.append(inputs[f"input_{ii}"])
+        parameters.append(
+            inputs[n.state["input_names"][ii] if n.state["input_names"] is not None else f"input_{ii}"])
     
     return { "result": f"{n.state['function_name']}({', '.join(parameters)})" }
 
+def f_call_distribute(n, inputs):
+    calls = []
+    for i in range(n.outputs["result"].data_type.arity()):
+        arguments = []
+        for k in range(len(n.inputs)):
+            key = f"input_{k}"
+            dt = n.inputs[key].data_type
+            if dt.arity() == 1:
+                arguments.append(inputs[key])
+            else:
+                arguments.append(f"{inputs[key]}[{i}]")
+        calls.append(f'{n.state["function_name"]}({",".join(arguments)})')
+
+    if len(calls) > 1:
+        return { "result": f"[{', '.join(calls)}]" }
+    else:
+        return { "result": calls[0] }
 
 def f_reflow(n, inputs):
     mapping = []
@@ -119,12 +152,12 @@ def f_reflow(n, inputs):
         output = n.outputs[f"output_{oi}"]
 
         if isinstance(output.data_type, FloatType) or isinstance(output.data_type, IntegerType):
-            outputs[output.name] = mapping[ii]
+            outputs[output.name] = mapping[n.state["indices"][ii]]
             ii += 1
         else:
             items = []
             for a in range(output.data_type.arity()):
-                items.append(mapping[ii])
+                items.append(mapping[n.state["indices"][ii]])
                 ii += 1
             outputs[output.name] = f"[{','.join(items)}]"
     
@@ -135,16 +168,17 @@ def f_reflow(n, inputs):
 # NODE CONSTRUCTORS
 
 def n_float(value):
-    return Node(f_literal, {"value": value}).output("result", FLOAT)
+    return Node(f_literal, {"value": value}, True).output("result", FLOAT)
 
 def n_integer(value):
-    return Node(f_literal, {"value": value}).output("result", INTEGER)
+    return Node(f_literal, {"value": value}, True).output("result", INTEGER)
 
 def n_identifier(name, data_type):
-    return Node(f_literal, {"value": name}).output("result", data_type)
+    return Node(f_literal, {"value": name}, True).output("result", data_type)
 
 def n_unary(combiner, dt_in, dt_out):
-    return Node(f_unary, {"combiner": combiner}) \
+    formatter = f_unary_s if dt_in.arity() == 1 else f_unary_v
+    return Node(formatter, {"combiner": combiner}) \
         .parameter("value", dt_in).output("result", dt_out)
 
 def n_binary(combiner, dt1, dt2, dt_out=None):
@@ -163,27 +197,40 @@ def n_binary(combiner, dt1, dt2, dt_out=None):
             .parameter("left", dt1).parameter("right", dt2) \
             .output("result", dt1 if dt_out is None else dt_out)
 
-    if isinstance(dt1, VectorType) and isinstance(dt2, FloatType):
+    if (isinstance(dt1, VectorType) or isinstance(dt1, MatrixType)) and isinstance(dt2, FloatType):
         return Node(f_binary_vs, {"combiner": combiner}) \
             .parameter("left", dt1).parameter("right", dt2) \
             .output("result", dt1 if dt_out is None else dt_out)
 
-    if isinstance(dt1, FloatType) and isinstance(dt2, VectorType):
+    if isinstance(dt1, FloatType) and (isinstance(dt2, VectorType) or isinstance(dt2, MatrixType)):
         return Node(f_binary_sv, {"combiner": combiner}) \
             .parameter("left", dt1).parameter("right", dt2) \
             .output("result", dt2 if dt_out is None else dt_out)
     
+    if isinstance(dt1, MatrixType) and isinstance(dt2, VectorType):
+        if dt1.arity() != dt2.arity() * dt2.arity():
+            raise TypeError("matrix multiplication of incompatible types")
+        return n_call("RT.matmul", [dt1, dt2], dt2, f_call, input_names=["left", "right"])
+
     raise ValueError(f"binary operator not applicable to types {dt1}, {dt2}")
 
-def n_branch(dt_in, dt_out):
-    return Node(f_branch, {} \
-        .parameter("condition", BOOLEAN).parameter("if_true", dt_in).parameter("if_false", dt_in)) \
-        .output("result", dt_out)
+def n_branch(dt):
+    return Node(f_branch, {}) \
+        .parameter("condition", BOOLEAN).parameter("if_true", dt).parameter("if_false", dt) \
+        .output("result", dt)
 
-def n_call(function_name, in_types, out_type):
-    node = Node(f_call, {"function_name": function_name})
+def n_call(function_name, in_types, out_type, formatter=f_call, input_names=None):
+    node = Node(formatter, {
+        "function_name": function_name,
+        "input_names": input_names
+    })
+
     for i in range(len(in_types)):
-        node.parameter(f"input_{i}", in_types[i])
+        if input_names is None:
+            node.parameter(f"input_{i}", in_types[i])
+        else:
+            node.parameter(input_names[i], in_types[i])
+
     node.output(f"result", out_type)
 
     return node
@@ -204,11 +251,15 @@ def n_reflow(in_types, out_types, indices=None):
         elif primitive != t.primitive_type():
             raise TypeError(f"incompatible primitive types {primitive} and {t.primitive_type()}, both on input")
 
-    if in_count <= 1:
+    if in_count <= 0:
         raise ValueError(f"cannot reflow {in_types}; the collective arity is {in_count}")
 
     if indices is None:
         indices = list(range(in_count))  # to do
+
+    for index in indices:
+        if index < 0 or index >= in_count:
+            raise ValueError(f"reflow index {index} invalid for input of size {in_count}")
 
     out_count = 0
     for t in out_types:
@@ -218,10 +269,12 @@ def n_reflow(in_types, out_types, indices=None):
             raise TypeError(f"incompatible primitive types {primitive} on input, {t.primitive_type()} on output")
         out_count += t.arity()
 
-    if out_count != in_count:
-        raise TypeError(f"reflow from {in_count} to {out_count} arity is impossible")
+    if out_count != len(indices):
+        raise TypeError(f"expected {len(indices)} arity, got {out_count}")
 
-    node = Node(f_reflow, {"indices": indices})
+    inline = (len(in_types) == 1 and out_count == 1)
+
+    node = Node(f_reflow, {"indices": indices}, inline)
     for i in range(len(in_types)):
         node.parameter(f"input_{i}", in_types[i])
     for i in range(len(out_types)):
@@ -248,6 +301,16 @@ class CodeGenerator:
         self.build(node, terminal_names)
         
         self.terminals = self.output_names[node]
+
+    def get_single_output(self):
+        if len(self.terminals) != 1:
+            raise ValueError("context requires exactly 1 generator output")
+        for _, v in self.terminals.items():
+            return v
+
+    def all_lines(self, indent=0):
+        left = margin(indent)
+        return "".join(map(lambda x: f"{left}{x}\n", self.lines))
 
     def enumerate_nodes(self, node):
         if node in self.in_degree:
@@ -278,7 +341,7 @@ class CodeGenerator:
                     if self.in_degree[target_node] == 0:
                         self.leaves.appendleft(target_node)
 
-    def build(self, root, terminal_names):
+    def build(self, root, terminal_names=None):
         for node in self.processing_order:
             self.output_names[node] = dict()
             input_variables = dict()
@@ -291,10 +354,15 @@ class CodeGenerator:
             
             output_expressions = node.formatter(node, input_variables)
             for output_name, output_expression in output_expressions.items():
-                if node is not root:
+                if node.substitutable:
+                    self.output_names[node][output_name] = output_expression
+                    continue
+
+                if node is not root or terminal_names is None or output_name not in terminal_names:
                     temp_name = self.generate_intermediate_name()
                 else:
                     temp_name = terminal_names[output_name]
+                
                 self.output_names[node][output_name] = temp_name
                 self.lines.append(f"const {temp_name} = {output_expression};")
 
@@ -349,4 +417,3 @@ def test():
     pp.pp(cg.lines)
     pp.pp(cg.terminals)
 
-test()

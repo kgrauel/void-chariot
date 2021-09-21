@@ -6,7 +6,6 @@ renderer {
     uniform float focalLength;
     uniform float farPlaneDistance;
     uniform float maxIterations;
-    uniform int iFrame;
     uniform vec3 directionTowardSun;
     uniform vec3 sunColor;
     uniform float aoIterations;
