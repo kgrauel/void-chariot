@@ -120,12 +120,14 @@ renderer {
             for (float i = 0; i < 12; i++) {
                 //vec3 aoRay = m * aoDirections[i];
                 vec3 aoRay = aoDirections[i];
-                color += (0.12 + 0.88 * ao(p + normal * 0.005, aoRay)) / 12.0 * pigment; // * (0.55 + 0.45 * dot(aoRay, directionTowardSun));
+                color += (0.04 + 0.96 * ao(p + normal * 0.005, aoRay)) / 12.0 * pigment; // * (0.55 + 0.45 * dot(aoRay, directionTowardSun));
             }
 
-            color += pigment * vec3(0.4, 0.41, 0.42) * max(0.0, dot(directionTowardSun, normal));
-            color += pigment * vec3(0.05, 0.05, 0.5) * max(0.0, normal.y);
-            color *= 1.0 + max(0, 0.5 * pow(cos(dot(ray, normal)), 140.0));
+            color += pigment * vec3(0.44, 0.41, 0.42) * max(0.0, dot(directionTowardSun, normal));
+            color += pigment * vec3(0.1, 0.11, 0.13) * max(0.0, normal.y);
+            float rimFactor = max(0, 1.0 * pow(cos(dot(ray, normal)), 90.0));
+            color *= 1.0 + rimFactor;
+            color += vec3(0.04) * rimFactor;
             //color = mix(color, vec3(0.4, 0.36, 0.42), max(0, 0.005 * t));
         } else {
             color = sky(ray);
