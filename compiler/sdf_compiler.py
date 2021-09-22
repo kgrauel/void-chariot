@@ -318,15 +318,24 @@ class VariableDeclaration(Node):
             return f"{a}{b} {c}{d}{e}"
         else:
             prefix = "let "
+            if "const" in a:
+                prefix = "readonly "
             if "uniform" in a:
                 prefix = ""
             
+            
             if self.initializer is None:
                 return f"{prefix}{c}: {b}{d}"
-            else:
+            elif "const" not in a:
                 generator = self.initializer.emit(language)
                 output_name = generator.get_single_output()
                 return [generator, f"{prefix}{c}: {b}{d} = {output_name}"]
+            else:
+                generator = self.initializer.emit(language)
+                return (f"{prefix}{c}: {b}{d} = (() => {{\n"
+                    f"{generator.all_lines(indent + 1)}{margin(indent + 1)}"
+                    f"return {generator.get_single_output()};\n"
+                    f"{margin(indent)}}})()")
 
 
 class Qualifiers(Node):
@@ -396,7 +405,7 @@ class ExpressionStatement(Node):
         if self.expression is None:
             return ""
         
-        expression = self.expression.emit(language, 0)
+        expression = self.expression.emit(language, indent)
 
         if isinstance(expression, str):
             return f"{margin(indent)}{expression};\n"
@@ -538,8 +547,10 @@ class ForStatement(Node):
                     generator = a[0]
                     lines += generator.all_lines(indent)
                     lines += f"{margin(indent)}{a[1]};\n"
-                else:
+                elif isinstance(a, eg.CodeGenerator):
                     lines += a.all_lines(indent)
+                else:
+                    lines += a
 
             lines += f"{margin(indent)}while (true) {{\n"
 
@@ -873,7 +884,10 @@ class FunctionCall(BinaryOperation):
         
 
     def eg_actual_function_call(self, name, arguments):
-        symbol = self.get_symbol(self.left.emit("glsl"))
+        symbol = self.get_symbol(name)
+        if symbol is None:
+            raise ValueError(f"function {name} not found")
+            
         data_type = symbol["type"]
         prefix = "this." if isinstance(symbol["node"], ShaderContainer) else ""
 

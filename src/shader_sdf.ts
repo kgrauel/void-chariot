@@ -33,11 +33,11 @@ ${renderer_code[1]}
             focalLength: { value: 1.0 },
             farPlaneDistance: { value: 100.0 },
             maxIterations: { value: 100.0 },
-            directionTowardSun: { value: [1, 1, 1] },
+            directionTowardSun: { value: [0.67, 0.3, 0.67] },
             sunColor: { value: [0.7, 0.7, 0.7] },
-            aoIterations: { value: 6 },
-            aoDistance: { value: 0.03 },
-            aoPower: { value: 1.5 }
+            aoIterations: { value: 3 },
+            aoDistance: { value: 0.05 },
+            aoPower: { value: 2 }
         },
 
         vertexShader: `

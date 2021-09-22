@@ -1,7 +1,12 @@
 renderer {
     uniform vec2 iResolution; // viewport resolution (in pixels)
     uniform vec3 camPos;
-    uniform vec3 lookAt;
+    //uniform vec3 lookAt;
+
+    uniform vec3 cameraForward;
+    uniform vec3 cameraRight;
+    uniform vec3 cameraUp;
+
     uniform float focalLength;
     uniform float farPlaneDistance;
     uniform float maxIterations;
@@ -55,9 +60,9 @@ renderer {
         frustum.x *= iResolution.x / iResolution.y;
 
         // Calculate basis vectors for camera.
-        vec3 forward = normalize(lookAt - camPos);
-        vec3 right = normalize(cross(forward, vec3(0.0, 1.0, 0.0)));
-        vec3 up = cross(right, forward);
+        vec3 forward = cameraForward; //normalize(lookAt - camPos);
+        vec3 right = cameraRight; //normalize(cross(forward, vec3(0.0, 1.0, 0.0)));
+        vec3 up = cameraUp; //cross(right, forward);
 
         // Calculate view ray (unit vector from camera through correct
         // pixel of frustum).
@@ -70,15 +75,15 @@ renderer {
         float steps = -0.001; // this bias prevents rounding error
         vec3 p = camPos;
 
-        float distance = 50.0;
-        vec4 interiorColor = vec4(0.0);
+        float distance = sdf(p);
+        float initialInside = -min(0, distance);
+        vec4 interiorColor = vec4(0, 0, 0, 0.0);
         float hasBeenPositive = 0.0;
         float interiorStep = 0.06;
 
         // Raymarch.
         while (t <= farPlaneDistance && steps <= maxIterations) {
-            distance = sdf(p);
-
+            
             if (distance > 0.001) {     
                 if (hasBeenPositive == 0) {
                    interiorColor.a -= distance;
@@ -95,6 +100,8 @@ renderer {
             p += distance * ray;
             t += distance;
             steps += 1.0;
+
+            distance = sdf(p);
         }
 
         // Lighting.
@@ -106,20 +113,28 @@ renderer {
             //float diffuse = clamp(dot(normal, directionTowardSun), 0.0, 1.0);
             vec3 pigment = getPigment(p);
             //color = diffuse * sunColor * pigment;
-            vec3 f = normal;
-            vec3 s = normalize(cross(f, vec3(0.48, 0.6, 0.64)));
-            vec3 u = cross(s, f);
-            mat3 m = mat3(u, s, f);
+            //vec3 f = normal;
+            //vec3 s = normalize(cross(f, vec3(0.48, 0.6, 0.64)));
+            //vec3 u = cross(s, f);
+            //mat3 m = mat3(u, s, f);
             for (float i = 0; i < 12; i++) {
-                vec3 aoRay = m * aoDirections[i];
-                color += ao(p + normal * 0.005, aoRay) / 12.0 * pigment * (0.5 + 0.5 * dot(aoRay, directionTowardSun));
+                //vec3 aoRay = m * aoDirections[i];
+                vec3 aoRay = aoDirections[i];
+                color += (0.12 + 0.88 * ao(p + normal * 0.005, aoRay)) / 12.0 * pigment; // * (0.55 + 0.45 * dot(aoRay, directionTowardSun));
             }
+
+            color += pigment * vec3(0.4, 0.41, 0.42) * max(0.0, dot(directionTowardSun, normal));
+            color += pigment * vec3(0.05, 0.05, 0.5) * max(0.0, normal.y);
+            color *= 1.0 + max(0, 0.5 * pow(cos(dot(ray, normal)), 140.0));
+            //color = mix(color, vec3(0.4, 0.36, 0.42), max(0, 0.005 * t));
         } else {
             color = sky(ray);
         }
 
+
         interiorColor.a = pow(clamp(interiorColor.a / 3, 0, 1), 0.5);
         color = mix(color, interiorColor.rgb / 3 * (0.8 - 0.2 * interiorColor.a), interiorColor.a);
+        color *= 0.5 / (0.5 + initialInside);
 
         color = pow(color, vec3(0.45));
         gl_FragColor = vec4(color, 1.0);
