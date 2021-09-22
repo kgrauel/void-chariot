@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Annotated, Any, Dict
+from typing import Any, Dict
 
 def margin(level):
     return "  " * level

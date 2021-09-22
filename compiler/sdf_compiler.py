@@ -1,6 +1,6 @@
 import functools
 from dataclasses import dataclass
-from typing import Annotated, Any, Dict
+from typing import Any, Dict
 from lark import Lark, Transformer
 from os import listdir
 from os.path import isfile, join, basename
