@@ -984,7 +984,7 @@ class Intermediate(Transformer):
     def mat2(self, c): return PrimitiveType("mat2")
     def mat3(self, c): return PrimitiveType("mat3")
     def mat4(self, c): return PrimitiveType("mat4")
-    def sampler2D(self, c): return PrimitiveType("sampler2D")
+    def sampler2d(self, c): return PrimitiveType("sampler2D")
 
     def array_type(self, c): return ArrayType(c[0], c[1])
     def function_declaration(self, c): return FunctionDeclaration(c[0], c[1], c[2], c[3])

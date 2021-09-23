@@ -27,7 +27,7 @@ class App {
         this.dragDeltaThisFrame = null;
 
         try {
-            this.levelName = "02";
+            this.levelName = "01";
             this.rendererName = "ao";
 
             this.timer = new Timer();

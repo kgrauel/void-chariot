@@ -44,6 +44,8 @@ export default abstract class PassAbstract {
                         format: THREE.RGBFormat
                     }
                 );
+                this.postCreateRenderTargetCustomize();
+                
             } else if (
                 this.outputTarget.width !== targetDimensions[0] || 
                 this.outputTarget.height !== targetDimensions[1]
@@ -61,5 +63,9 @@ export default abstract class PassAbstract {
                 throw new Error("Pass is set to render to screen, but outputTarget is not null");
             }
         }
+    }
+
+    postCreateRenderTargetCustomize() {
+        // do nothing; this is intended for overriding
     }
 }

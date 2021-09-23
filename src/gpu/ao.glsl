@@ -8,6 +8,8 @@ renderer {
     uniform vec3 cameraUp;
 
     uniform float focalLength;
+
+    uniform float nearPlaneDistance;
     uniform float farPlaneDistance;
     uniform float maxIterations;
     uniform vec3 directionTowardSun;
@@ -15,6 +17,9 @@ renderer {
     uniform float aoIterations;
     uniform float aoDistance;
     uniform float aoPower;
+
+    uniform sampler2D colorIn;
+    uniform sampler2D depthIn;
 
     const vec3 aoDirections[12] = vec3[12] (
         vec3(0.357407, 0.357407, 0.862856),
@@ -53,11 +58,31 @@ renderer {
     }
 
 
+    float linearizeDepth(float depthSample)
+    {
+        depthSample = 2.0 * depthSample - 1.0;
+        float zNear = nearPlaneDistance;
+        float zFar = farPlaneDistance;
+
+        return 2.0 * zNear * zFar / (zFar + zNear - depthSample * (zFar - zNear));
+    }
+
     void main() {
         // Near plane frustum coords with center at (0, 0) and vertical
         // extent [-1, 1]. Horizontal varies by aspect ratio.
         vec2 frustum = vUv * 2.0 - vec2(1.0);
         frustum.x *= iResolution.x / iResolution.y;
+
+        // Calculate original color and depth along camera ray
+        // for traditionally rendered scene.
+        vec3 originalColor = texture2D(colorIn, vUv).rgb;
+        float depth = texture2D(depthIn, vUv).x;
+        if (depth < 0.999) {
+            depth = linearizeDepth(depth);
+            depth = length(vec3(frustum.xy * depth, depth));
+        } else {
+            depth = 10000;
+        }
 
         // Calculate basis vectors for camera.
         vec3 forward = cameraForward; //normalize(lookAt - camPos);
@@ -80,9 +105,11 @@ renderer {
         vec4 interiorColor = vec4(0, 0, 0, 0.0);
         float hasBeenPositive = 0.0;
         float interiorStep = 0.06;
+        vec3 color = vec3(0.0, 0.0, 0.0);
+
 
         // Raymarch.
-        while (t <= farPlaneDistance && steps <= maxIterations) {
+        while (t <= farPlaneDistance && t < depth && steps <= maxIterations) {
             
             if (distance > 0.001) {     
                 if (hasBeenPositive == 0) {
@@ -104,41 +131,45 @@ renderer {
             distance = sdf(p);
         }
 
-        // Lighting.
-        vec3 color = vec3(0.0, 0.0, 0.0);
-        vec3 pigment = getPigment(p);
 
-        if (distance < 1.0 && distance > -1.0) {
-            vec3 normal = approximateNormal(p);
-            //float diffuse = clamp(dot(normal, directionTowardSun), 0.0, 1.0);
+
+        if (t < depth) {
             vec3 pigment = getPigment(p);
-            //color = diffuse * sunColor * pigment;
-            //vec3 f = normal;
-            //vec3 s = normalize(cross(f, vec3(0.48, 0.6, 0.64)));
-            //vec3 u = cross(s, f);
-            //mat3 m = mat3(u, s, f);
-            for (float i = 0; i < 12; i++) {
-                //vec3 aoRay = m * aoDirections[i];
-                vec3 aoRay = aoDirections[i];
-                color += (0.04 + 0.96 * ao(p + normal * 0.005, aoRay)) / 12.0 * pigment; // * (0.55 + 0.45 * dot(aoRay, directionTowardSun));
+
+            if (distance < 1.0 && distance > -1.0) {
+                vec3 normal = approximateNormal(p);
+                //float diffuse = clamp(dot(normal, directionTowardSun), 0.0, 1.0);
+                vec3 pigment = getPigment(p);
+                //color = diffuse * sunColor * pigment;
+                //vec3 f = normal;
+                //vec3 s = normalize(cross(f, vec3(0.48, 0.6, 0.64)));
+                //vec3 u = cross(s, f);
+                //mat3 m = mat3(u, s, f);
+                for (float i = 0; i < 12; i++) {
+                    //vec3 aoRay = m * aoDirections[i];
+                    vec3 aoRay = aoDirections[i];
+                    color += (0.04 + 0.96 * ao(p + normal * 0.005, aoRay)) / 12.0 * pigment; // * (0.55 + 0.45 * dot(aoRay, directionTowardSun));
+                }
+
+                color += pigment * vec3(0.44, 0.41, 0.42) * max(0.0, dot(directionTowardSun, normal));
+                color += pigment * vec3(0.1, 0.11, 0.13) * max(0.0, normal.y);
+                float rimFactor = max(0, 1.0 * pow(cos(dot(ray, normal)), 90.0));
+                color *= 1.0 + rimFactor;
+                color += vec3(0.04) * rimFactor;
+                //color = mix(color, vec3(0.4, 0.36, 0.42), max(0, 0.005 * t));
+            } else {
+                color = sky(ray);
             }
 
-            color += pigment * vec3(0.44, 0.41, 0.42) * max(0.0, dot(directionTowardSun, normal));
-            color += pigment * vec3(0.1, 0.11, 0.13) * max(0.0, normal.y);
-            float rimFactor = max(0, 1.0 * pow(cos(dot(ray, normal)), 90.0));
-            color *= 1.0 + rimFactor;
-            color += vec3(0.04) * rimFactor;
-            //color = mix(color, vec3(0.4, 0.36, 0.42), max(0, 0.005 * t));
+            interiorColor.a = pow(clamp(interiorColor.a / 3, 0, 1), 0.5);
+            color = mix(color, interiorColor.rgb / 3 * (0.8 - 0.2 * interiorColor.a), interiorColor.a);
+            color *= 0.5 / (0.5 + initialInside);
+            color = pow(color, vec3(0.45));
         } else {
-            color = sky(ray);
+            color = originalColor;
         }
 
-
-        interiorColor.a = pow(clamp(interiorColor.a / 3, 0, 1), 0.5);
-        color = mix(color, interiorColor.rgb / 3 * (0.8 - 0.2 * interiorColor.a), interiorColor.a);
-        color *= 0.5 / (0.5 + initialInside);
-
-        color = pow(color, vec3(0.45));
+        
         gl_FragColor = vec4(color, 1.0);
     }
 }

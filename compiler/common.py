@@ -45,6 +45,10 @@ class MatrixType:
     def arity(self): return self.size * self.size
     def primitive_type(self): return FloatType()
 
+@dataclass
+class TextureType:
+    def arity(self): return 0
+    def primitive_type(self): return self
 
 
 REWRITE_TYPES = {
@@ -55,7 +59,8 @@ REWRITE_TYPES = {
     "vec3": VectorType(FloatType(), 3),
     "vec4": VectorType(FloatType(), 4),
     "mat3": MatrixType(3),
-    "mat4": MatrixType(4)
+    "mat4": MatrixType(4),
+    "sampler2D": TextureType()
 }
 
 TS_TYPES = {
@@ -66,7 +71,8 @@ TS_TYPES = {
     "vec3": "number[]",
     "vec4": "number[]",
     "mat3": "number[]",
-    "mat4": "number[]"
+    "mat4": "number[]",
+    "sampler2D": "ERROR"
 }
 
 

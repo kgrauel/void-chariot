@@ -31,6 +31,7 @@ ${renderer_code[1]}
             camPos: { value: [1, 0.4, 2] },
             lookAt: { value: [0, 0, 0] },
             focalLength: { value: 1.0 },
+            nearPlaneDistance: { value: 0.1 },
             farPlaneDistance: { value: 100.0 },
             maxIterations: { value: 100.0 },
             directionTowardSun: { value: [0.67, 0.3, 0.67] },

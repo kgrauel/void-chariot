@@ -363,9 +363,12 @@ level {
     
     float sdf(vec3 p)
     {
-        float v = cylinder(p - vec3(0, -10, 0), 20, 10);
-        v = difference_chamfer(v, ball(p - vec3(0, 0, 0), 5.0), 1.0);
-        v = union_sharp(v, ball(p - vec3(0, 15, 0), 5.0)); 
+        float v = cylinder(p - vec3(0, -10, 0), 10, 10);
+        v = difference_sharp(v, ball(p - vec3(0, 0, 0), 5.0));
+        v = union_sharp(v, ball(p - vec3(0, 0, -5), 1.0));
+
+        v = union_sharp(v, ball(p - vec3(0, 17, 0), 5.0)); 
+        v = difference_sharp(v, cylinder(p - vec3(0, -15, 0), 1, 12.0));
         return v;
     }
 
@@ -382,7 +385,7 @@ level {
             c *= vec3(0.84, 0.88, 1.02);
         }
 
-        if (ball(p - vec3(0, 15, 0), 5.0) < 1) {
+        if (ball(p - vec3(0, 17, 0), 5.0) < 1) {
             c *= vec3(1.0, 0.5, 0.5);
         }
         return c;
