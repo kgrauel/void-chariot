@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { APP } from "./app";
 import BUILT from "./built";
-import { GameObject, TargetPickup } from "./objects";
+import { GameObject, InertObject, TargetPickup } from "./objects";
 
 
 const NORMAL_DIRECTIONS = [
@@ -59,7 +59,7 @@ export default class Level {
         this.cameraPosition = new THREE.Vector3(0, 1, 0);
         this.cameraVelocity = new THREE.Vector3();
         this.cameraOrientation = new THREE.Quaternion();
-        this.cameraMoveSpeed = 7.0;
+        this.cameraMoveSpeed = 7.4;
         this.cameraRotateSpeed = 0.004;
         this.cameraAirFriction = 0.4;
         this.cameraDragCoefficient = 0.03;
@@ -74,19 +74,33 @@ export default class Level {
         this.raceTimer = 4.0;
     }
 
+    getTime() {
+        if (this.gameState === STATE_COUNTDOWN) {
+            return -this.raceTimer;
+        }
+
+        return this.raceTimer;
+    }
+
+    dispose() {
+        for (let [key, go] of this.gameObjects) {
+            go.dispose();
+        }
+    }
+
     reset() {
         this.cameraPosition = new THREE.Vector3(0, 1, 0);
         this.cameraVelocity = new THREE.Vector3();
         this.cameraOrientation = new THREE.Quaternion();
 
-        for (let [key, go] of this.gameObjects) {
-            go.dispose();
-        }
+        this.dispose();
 
         this.gameObjects = new Map();
         this.targetPickups = [];
 
         this.level_TS.initializeLevel(this);
+        this.gameState = STATE_COUNTDOWN;
+        this.raceTimer = 4.0;
     }
 
     addTargetPickup(position: THREE.Vector3) {
@@ -94,6 +108,14 @@ export default class Level {
         tp.position = position;
         this.targetPickups.push(tp.id);
         this.gameObjects.set(tp.id, tp);
+    }
+
+    addInert(name: string, object: THREE.Object3D) {
+        if (this.gameObjects.has(name)) {
+            throw `game object with name ${name} already exists`;
+        }
+
+        this.gameObjects.set(name, new InertObject(name, object));
     }
 
     insertObjectsIntoScene(scene: THREE.Scene) {
@@ -170,9 +192,13 @@ export default class Level {
             request.addScaledVector(this.getCameraRight(), 1);
         }
 
-        // if (APP.pressedKeys.has(" ")) {
-        //     request.addScaledVector(this.getCameraUp(), 1);
-        // }
+        if (APP.pressedKeys.has(" ")) {
+            request.addScaledVector(this.getCameraUp(), 1);
+        }
+
+        if (APP.pressedKeys.has("Shift")) {
+            request.addScaledVector(this.getCameraUp(), -1);
+        }
 
         if (request.lengthSq() <= 0.01) {
             return request;
@@ -197,9 +223,9 @@ export default class Level {
         let qy = new THREE.Quaternion();
         let up = this.getCameraUp();
 
-        let yawAxis = (sdf < 3.0 ? normal : (sdf > 5.0 ? up : (
-            normal.clone().multiplyScalar((5.0 - sdf) / 2).addScaledVector(up, (sdf - 3.0) / 2)
-        )));
+        let yawAxis = up; //(sdf < 3.0 ? normal : (sdf > 5.0 ? up : (
+            //normal.clone().multiplyScalar((5.0 - sdf) / 2).addScaledVector(up, (sdf - 3.0) / 2)
+        //)));
         qy.setFromAxisAngle(yawAxis, yaw);
 
         let qp = new THREE.Quaternion();
@@ -238,7 +264,7 @@ export default class Level {
         let axis = desiredUp.clone().cross(currentUp);
         let quat = new THREE.Quaternion();
 
-        let pitchCorrectionFactor = Math.max(0, 1.0 - this.cameraDisablePitchCorrectionTime);
+        let pitchCorrectionFactor = 0.2 * Math.max(0, 1.0 - this.cameraDisablePitchCorrectionTime);
         quat.setFromAxisAngle(axis,
             pitchCorrectionFactor * Math.max(0, 4 - sdf) * timePerStep);
 
@@ -250,7 +276,7 @@ export default class Level {
 
         axis = desiredUp.clone().cross(currentUp);
         quat = new THREE.Quaternion();
-        quat.setFromAxisAngle(axis, Math.max(0, 4 - sdf) * timePerStep);
+        quat.setFromAxisAngle(axis, 1.0 * Math.max(0, 4 - sdf) * timePerStep);
 
         this.cameraOrientation.premultiply(quat);
         this.cameraOrientation.normalize();
@@ -345,7 +371,7 @@ export default class Level {
                 throw `Could not find target with name ${targetName}`;
             }
             let distance = target.position.distanceTo(this.cameraPosition);
-            if (distance < 1.0 && !target.triggered) {
+            if (distance < 1.5 && !target.triggered) {
                 target.triggered = true;
             }
         }

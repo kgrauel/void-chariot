@@ -42,6 +42,13 @@ export default class PassShaderQuad extends PassAbstract {
         renderer.compile(this.scene, this.camera);
     }
 
+    updateMaterial(shaderMaterial: THREE.ShaderMaterial | THREE.RawShaderMaterial) {
+        this.material = shaderMaterial;
+        this.mesh.material = this.material;
+        this.mesh.material.needsUpdate = true;
+        
+    }
+
     render(
         renderer: THREE.WebGLRenderer,
         previousPass: THREE.Texture | null,
@@ -62,7 +69,9 @@ export default class PassShaderQuad extends PassAbstract {
         const size = new THREE.Vector2();
         renderer.getSize(size);
 
-        this.material.uniforms.iTime = { value: APP.timer.getTotalElapsed() };
+        this.material.uniforms.iTime = {
+            value: APP.level.getTime()
+        };
         this.material.uniforms.iResolution = {
             value: (
                 targetDimensions !== null ?

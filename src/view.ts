@@ -26,6 +26,12 @@ export default class View {
         window.addEventListener("resize", (e) => this.onWindowResize(e));
     }
 
+    changeLevel(levelName: string, rendererName: string) {
+        this.levelName = levelName;
+        this.rendererName = rendererName;
+        this.renderGraph.changeLevel(this.levelName, this.rendererName)
+    }
+
     getTraditionalScene(): THREE.Scene {
         return this.renderGraph.traditionalPass.scene;
     }

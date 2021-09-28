@@ -45,10 +45,15 @@ export default class RenderGraph {
         this.upscalePass = new PassShaderQuad(false, createUpscaleShader());
         this.traditionalPass = new PassTraditional(true);
         
-        this.updateDimensions();10
+        this.updateDimensions();
 
         let compileTime = this.compileShaders();
         console.log(`Compiled in ${compileTime} seconds.`);
+    }
+
+    changeLevel(levelName: string, rendererName: string) {
+        this.sdfPass.updateMaterial(createSDFShader(levelName, rendererName));
+        this.traditionalPass.scene.clear();
     }
 
     getDOMElement(): any {

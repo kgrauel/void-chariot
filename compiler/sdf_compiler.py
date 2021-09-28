@@ -949,6 +949,8 @@ class Identifier(UnaryOperation):
 
     def expression_graph(self):
         symbol = self.get_symbol(self.value)
+        if symbol == None:
+            raise ValueError(f"used undefined identifier {self.value}")
         data_type = symbol["type"]
         prefix = "this." if isinstance(symbol["node"], ShaderContainer) else ""
 

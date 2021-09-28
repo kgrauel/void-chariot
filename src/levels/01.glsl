@@ -363,46 +363,48 @@ level {
     
     float sdf(vec3 p)
     {
-        float v = cylinder(p - vec3(0, -10, 0), 10, 10);
-        v = difference_sharp(v, ball(p - vec3(0, 0, 0), 5.0));
-        v = union_sharp(v, ball(p - vec3(0, 0, -5), 1.0));
-
-        v = union_sharp(v, ball(p - vec3(0, 17, 0), 5.0)); 
-        v = difference_sharp(v, cylinder(p - vec3(0, -15, 0), 1, 12.0));
+        float v = abs(p.y) - 2;
+        v = union_stairs(v, segment(p, vec3(-2, 1, -6), vec3(-2, 10, -6.1)) - 1.5, 1.0, 3);
+        v = union_stairs(v, segment(p, vec3(2, 1, -11), vec3(2, 9, -10.7)) - 1.5, 1.0, 3);
+        v = difference_round(v, length(p.xz - vec2(0, -20)) - 6, 2.0);
+        v = union_soft(v, length(p - vec3(0, -5, -18)) - 5.0, 2.0);
+        v = union_sharp(v, length(p - vec3(0, -30, 30)) - 10.0);
+        v = union_sharp(v, length(p - vec3(0, 40, -8)) - 13.0);
+        
         return v;
     }
 
-    vec3 getPigment(vec3 p) {
-        vec3 c = vec3(0.9, 0.85, 0.87) * 0.2;
-         
-        if (mod(p.x, 2) < 1) {
-            c *= vec3(1.0, 0.87, 0.8);
-        }
-        if (mod(p.y, 2) < 1) {
-            c *= vec3(0.9, 1.0, 0.9);
-        }
-        if (mod(p.z, 2) < 1) {
-            c *= vec3(0.84, 0.88, 1.02);
-        }
 
-        if (ball(p - vec3(0, 17, 0), 5.0) < 1) {
-            c *= vec3(1.0, 0.5, 0.5);
-        }
+
+    vec3 pigBase(vec3 p) {
+        return mix(vec3(0.4), vec3(0.39,0.12,0.08), clamp(-p.y * 0.5 + 0.5, 0, 1));
+    }
+
+    // Add three dimensional checkering to an existing base color
+    vec3 pigChecker(vec3 p, vec3 baseColor) {
+        baseColor *= 0.9 + 0.1 * floor(mod(p.x, 2));
+        baseColor *= 0.9 + 0.1 * floor(mod(p.y, 2));
+        baseColor *= 0.9 + 0.1 * floor(mod(p.z, 2));
+        return baseColor;
+    }
+
+    // Returns 1 inside box, 0 outside
+    float insideBox(vec2 p, vec2 center, vec2 size) {
+        p = abs(p - center) / size;
+        return max(0, 1 - floor(max(p.x, p.y)));
+    }
+
+    vec3 getPigment(vec3 p) {
+        vec3 c = pigBase(p);
+        c = mix(c, vec3(0.23, 0.3, 0.45), step(0.1, -length(p - vec3(0, 60, -8)) + 13.0));
+        c = pigChecker(p, c);
+        c = mix(c, vec3(0.1), insideBox(vec2(p.x, mod(p.z, 2)), vec2(0, 1), vec2(0.2, 0.5)));
+
         return c;
     }
 
     vec3 sky(vec3 dir) {
-        return vec3(0.2, 0.26, 0.15) * pow(max(0.0, dot(dir, vec3(0.8, 0.4, 0.9))), 2.0)
-            + vec3(0.26, 0.18, 0.15) * pow(max(0.0, dot(dir, vec3(-0.9, -0.4, -0.6))), 2.0)
-            + vec3(0.05, 0.02, 0.17) * pow(max(0.0, dot(dir, vec3(0.8, -0.7, 0.9))), 2.0)
-            + vec3(0.2, 0.2, 0.2) * pow(max(0.0, dot(dir, vec3(-0.3, 0.9, 0.1))), 2.0)
-            + vec3(0.01, 0.02, 0.03);
-        
-        // return mix(
-        //     vec3(0.3, 0.24, 0.46),
-        //     vec3(0.8, 0.97, 1.0),
-        //    b dir.y * 0.5 + 0.5
-        // );
+        return mix(vec3(0.6), vec3(0.5, 0.1, 0.1), smoothstep(-0.2, 0.2, -dir.y));
     }
 
 }

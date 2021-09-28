@@ -71,7 +71,7 @@ export class TargetPickup extends GameObject {
     }
 
     createMesh(): THREE.Mesh | null {
-        let geometry = new THREE.SphereGeometry(0.3, 32, 32);
+        let geometry = new THREE.SphereGeometry(0.5, 32, 32);
         let material = TARGET_DEFAULT_MATERIAL;
         return new THREE.Mesh(geometry, material);
     }
@@ -87,5 +87,18 @@ export class TargetPickup extends GameObject {
                 this.mesh.material = desiredMaterial;
             }
         }
+    }
+}
+
+export class InertObject extends GameObject {
+    object: THREE.Object3D;
+
+    constructor(id: string | undefined, object: THREE.Object3D) {
+        super(id);
+        this.object = object;
+    }
+
+    insertIntoScene(scene: THREE.Scene) {
+        scene.add(this.object);
     }
 }

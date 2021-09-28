@@ -22,10 +22,7 @@ export default class PassTraditional extends PassAbstract {
         //sphere.position.set(0, 0, -5);
         //this.scene.add(sphere);
 
-        this.scene.add(new THREE.AmbientLight(0xc0e0ff, 0.2));
-        let sun = new THREE.DirectionalLight(0xf0f0f0, 0.6);
-        
-        this.scene.add(sun);
+       
 
 
     }

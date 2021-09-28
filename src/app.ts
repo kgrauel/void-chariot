@@ -27,7 +27,7 @@ class App {
         this.dragDeltaThisFrame = null;
 
         try {
-            this.levelName = "02";
+            this.levelName = "01";
             this.rendererName = "ao";
 
             this.timer = new Timer();
@@ -43,7 +43,18 @@ class App {
         }
     }
     
+    changeLevel(levelName: string, rendererName: string) {
+        this.levelName = levelName;
+        this.rendererName = rendererName;
 
+        this.timer.reset();
+        this.level.dispose();
+        this.level = new Level(this.levelName);
+        
+        this.view.changeLevel(this.levelName, this.rendererName);
+
+        this.level.insertObjectsIntoScene(this.view.getTraditionalScene());
+    }
 
     start() {
         this.onRequestAnimationFrame();
@@ -52,12 +63,25 @@ class App {
     registerEventHandlers() {
         window.addEventListener("keydown", (event) => {
             this.pressedKeys.add(event.key);
+
             if (event.key === "e") {
                 const x = this.level.cameraPosition.x;
                 const y = this.level.cameraPosition.y;
                 const z = this.level.cameraPosition.z;
 
                 console.log(`level.addTargetPickup(new THREE.Vector3(${x}, ${y}, ${z}));`);
+            }
+
+            if (event.key === "r") {
+                this.changeLevel(this.levelName, this.rendererName);
+            }
+
+            if (event.key === "1") {
+                this.changeLevel("01", "ao");
+            }
+
+            if (event.key === "2") {
+                this.changeLevel("02", "ao");
             }
         });
 

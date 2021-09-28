@@ -1,5 +1,10 @@
+# Done!
+
 * Restart level by keypress
 * Switch level by keypress (1-6)
+
+# Not done
+
 * Mouse locking
 * Can't select HUD text
 * Balls left HUD
@@ -21,7 +26,7 @@
   * Ambient
 
 * Create levels:
-  * 01 flat tutorial level suffused with light; 
+  * 01 flat tutorial level suffused with light
   * 02
   * 03
   * 04
@@ -37,8 +42,8 @@
   * Mac (Chrome, Firefox, Edge)
   * Linux (Chrome, Firefox, Edge)
 
-* Deploy to server
+* Deploy to server (docker)
 
 * Document/comment
 * Blog writeup
-* Advertise10
+* Advertise
