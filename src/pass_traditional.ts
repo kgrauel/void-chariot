@@ -16,11 +16,11 @@ export default class PassTraditional extends PassAbstract {
 
         this.scene = new THREE.Scene();
 
-        let geometry = new THREE.SphereGeometry(1.5, 32, 32);
-        let material = new THREE.MeshStandardMaterial({ color: 0xc080c0 });
-        let sphere = new THREE.Mesh(geometry, material);
-        sphere.position.set(0, 0, -5);
-        this.scene.add(sphere);
+        //let geometry = new THREE.SphereGeometry(1.5, 32, 32);
+        //let material = new THREE.MeshStandardMaterial({ color: 0xc080c0 });
+        //let sphere = new THREE.Mesh(geometry, material);
+        //sphere.position.set(0, 0, -5);
+        //this.scene.add(sphere);
 
         this.scene.add(new THREE.AmbientLight(0xc0e0ff, 0.2));
         let sun = new THREE.DirectionalLight(0xf0f0f0, 0.6);

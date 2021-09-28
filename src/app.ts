@@ -27,12 +27,14 @@ class App {
         this.dragDeltaThisFrame = null;
 
         try {
-            this.levelName = "01";
+            this.levelName = "02";
             this.rendererName = "ao";
 
             this.timer = new Timer();
             this.level = new Level(this.levelName);
             this.view = new View(this.levelName, this.rendererName);
+
+            this.level.insertObjectsIntoScene(this.view.getTraditionalScene());
 
             this.registerEventHandlers();
         } catch (e: any) {
@@ -40,7 +42,9 @@ class App {
             throw "Could not initialize application.";
         }
     }
-     
+    
+
+
     start() {
         this.onRequestAnimationFrame();
     }
@@ -48,6 +52,13 @@ class App {
     registerEventHandlers() {
         window.addEventListener("keydown", (event) => {
             this.pressedKeys.add(event.key);
+            if (event.key === "e") {
+                const x = this.level.cameraPosition.x;
+                const y = this.level.cameraPosition.y;
+                const z = this.level.cameraPosition.z;
+
+                console.log(`level.addTargetPickup(new THREE.Vector3(${x}, ${y}, ${z}));`);
+            }
         });
 
         window.addEventListener("keyup", (event) => {
@@ -73,7 +84,6 @@ class App {
 
     onRequestAnimationFrame() {
         this.timer.newFrame();
-
         
         try {
             this.dragDeltaThisFrame = (this.pressedMouseButtons.size === 0 || this.dragLast === null ? null : [

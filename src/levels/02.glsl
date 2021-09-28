@@ -70,7 +70,7 @@ level {
     }
 
     vec3 getPigment(vec3 p) {
-        vec3 c = vec3(0.9, 0.85, 0.8) * 0.3;
+        vec3 c = vec3(0.9, 0.85, 0.8) * 0.4;
         float far = length(p.xz);
 
         if (far < 20) {

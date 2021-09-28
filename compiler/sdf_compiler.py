@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Any, Dict
 from lark import Lark, Transformer
 from os import listdir
-from os.path import isfile, join, basename
+from os.path import isfile, join, basename, exists
 import pprint as pp
 from common import * 
 import expression_graph as eg
@@ -157,7 +157,7 @@ class LevelContainer(ShaderContainer):
         body = []
         body.append("import * as RT from \"../shader_runtime\";")
         body.append("")
-        body.append("export class Level {")
+        body.append("export class GLSL {")
 
         for c in self.children:
             body.append(c.emit(language, indent=1))
@@ -1086,15 +1086,20 @@ with open("./src/built/index.ts", "w") as index:
     index.write("import { NativeLevel } from \"../shader_runtime\";\n")
     index.write("let levels: Map<string, string[]> = new Map();\n")
     index.write("let renderers: Map<string, string[]> = new Map();\n")
-    index.write("let natives: Map<string, any> = new Map();\n\n")
+    index.write("let natives: Map<string, any> = new Map();\n")
+    index.write("let level_TS: Map<string, any> = new Map();\n\n")
 
     for file in identify_source_files():
+        if not file.endswith(".glsl"):
+            continue
+
         text = read_file(file)
         tree = parser.parse(text)
 
         if isinstance(tree, Top):
             base = basename(file)
             id = base[0:base.index(".")]
+            ts_file = file[0:-5] + ".ts"
 
             if tree.level is not None:
                 print(f"Level GLSL {id}")
@@ -1115,9 +1120,14 @@ with open("./src/built/index.ts", "w") as index:
                 output_path = f"./src/built/{output_file}.ts"
                 with open(output_path, "w") as handle:
                     handle.write(f"{code}\n")
+                    if exists(ts_file):
+                        ts = read_file(ts_file)
+                        handle.write(f"\n\n{ts}\n")
+                        index.write(f"import {{ TS as TS_{id} }} from \"./{output_file}\";\n")
+                        index.write(f"level_TS.set(\"{id}\", TS_{id});\n\n")
 
-                index.write(f"import {{ Level as SDF_{id} }} from \"./{output_file}\";\n")
-                index.write(f"natives.set(\"{id}\", new SDF_{id}());\n\n")
+                index.write(f"import {{ GLSL as GLSL_{id} }} from \"./{output_file}\";\n")
+                index.write(f"natives.set(\"{id}\", new GLSL_{id}());\n\n")
 
 
             if tree.renderer is not None:
@@ -1136,6 +1146,7 @@ with open("./src/built/index.ts", "w") as index:
     index.write("    levels: levels,\n")
     index.write("    renderers: renderers,\n")
     index.write("    natives: natives,\n")
+    index.write("    level_TS: level_TS,\n")
     index.write("};\n");
     index.write("export default BUILT;\n")
     

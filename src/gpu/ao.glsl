@@ -133,7 +133,9 @@ renderer {
 
 
 
-        if (t < depth) {
+        if (t >= depth || (depth < 200 && mod(gl_FragCoord.x + gl_FragCoord.y, 2) == 0)) {
+            color = originalColor;
+        } else {
             vec3 pigment = getPigment(p);
 
             if (distance < 1.0 && distance > -1.0) {
@@ -165,8 +167,6 @@ renderer {
             color = mix(color, interiorColor.rgb / 3 * (0.8 - 0.2 * interiorColor.a), interiorColor.a);
             color *= 0.5 / (0.5 + initialInside);
             color = pow(color, vec3(0.45));
-        } else {
-            color = originalColor;
         }
 
         

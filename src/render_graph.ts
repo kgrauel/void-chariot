@@ -45,7 +45,7 @@ export default class RenderGraph {
         this.upscalePass = new PassShaderQuad(false, createUpscaleShader());
         this.traditionalPass = new PassTraditional(true);
         
-        this.updateDimensions();
+        this.updateDimensions();10
 
         let compileTime = this.compileShaders();
         console.log(`Compiled in ${compileTime} seconds.`);

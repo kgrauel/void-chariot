@@ -26,6 +26,10 @@ export default class View {
         window.addEventListener("resize", (e) => this.onWindowResize(e));
     }
 
+    getTraditionalScene(): THREE.Scene {
+        return this.renderGraph.traditionalPass.scene;
+    }
+
     onWindowResize(event: UIEvent) {
         this.renderGraph.updateDimensions();
     }
